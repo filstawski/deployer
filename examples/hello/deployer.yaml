@@ -1,0 +1,11 @@
+version: 1
+project: hello
+source:
+  dockerfile: Dockerfile
+  context: .
+http:
+  service: web
+  port: 8080
+  healthcheck:
+    path: /health
+    timeout: 30s

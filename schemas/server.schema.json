@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Deployer server configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1,
+      "default": 1
+    },
+    "listen": {
+      "type": "string",
+      "default": "127.0.0.1:7420",
+      "description": "Loopback IP and numeric TCP port, validated by the server. Public API binding is rejected."
+    },
+    "state_dir": {
+      "type": "string",
+      "minLength": 1,
+      "default": "/var/lib/deployer",
+      "description": "Dedicated owner-only state directory. Relative paths resolve against the configuration file. Root is prohibited."
+    },
+    "base_domain": {
+      "type": "string",
+      "default": "localhost",
+      "pattern": "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$",
+      "description": "Lowercase preview hostname suffix without scheme or port."
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "gateway_image": {
+          "type": "string",
+          "minLength": 1,
+          "default": "deployer-gateway:dev"
+        },
+        "gateway_port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "default": 8080
+        },
+        "control_port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "default": 7421
+        },
+        "max_deployments": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 8
+        }
+      },
+      "required": []
+    },
+    "preview": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "scheme": {
+          "enum": [
+            "",
+            "http",
+            "https"
+          ],
+          "default": "",
+          "description": "External visitor scheme; empty means http. Set https behind a TLS terminator."
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535,
+          "default": 0,
+          "description": "External visitor port; 0 defaults to 443 for https, otherwise the gateway port."
+        }
+      }
+    }
+  }
+}

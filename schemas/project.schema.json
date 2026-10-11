@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Deployer single-service project recipe",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "project": {
+      "type": "string"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dockerfile": {
+          "type": "string",
+          "minLength": 1
+        },
+        "context": {
+          "type": "string",
+          "default": "."
+        }
+      },
+      "required": [
+        "dockerfile"
+      ]
+    },
+    "http": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "service": {
+          "const": "web",
+          "default": "web"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "healthcheck": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string",
+              "default": "/health",
+              "pattern": "^/(?!/)"
+            },
+            "timeout": {
+              "type": "string",
+              "default": "90s",
+              "description": "Go duration between 1s and 5m; validated by server."
+            }
+          },
+          "required": []
+        }
+      },
+      "required": [
+        "port"
+      ]
+    },
+    "environment": {
+      "type": "object",
+      "maxProperties": 100,
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Ordinary runtime settings; DEPLOYER_ prefix is reserved. No secret references yet."
+    }
+  },
+  "required": [
+    "version",
+    "source",
+    "http"
+  ]
+}

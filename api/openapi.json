@@ -1,0 +1,1313 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Deployer control-plane API",
+    "version": "0.1.0-dev",
+    "description": "Implemented authenticated project, token, operation, and Dockerfile deployment endpoints. Docker runtime is opt-in. Requests are limited to 64 KiB. Healthz is the only anonymous management endpoint."
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:7420"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "summary": "Non-sensitive process readiness",
+        "responses": {
+          "200": {
+            "description": "Successful result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "schema_version": {
+                      "const": 1
+                    },
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "status": {
+                          "const": "ok"
+                        }
+                      },
+                      "required": [
+                        "status"
+                      ]
+                    },
+                    "request_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "schema_version",
+                    "data",
+                    "request_id"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Structured error; 400 invalid input, 401 invalid token, 403 missing scope, 404 absent/inaccessible resource, 409 conflict, 429 queue full, 500 internal failure, 503 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/v1/server": {
+      "get": {
+        "summary": "Server capabilities; requires server:read",
+        "responses": {
+          "200": {
+            "description": "Successful result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "schema_version": {
+                      "const": 1
+                    },
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "name": {
+                          "const": "deployer"
+                        },
+                        "version": {
+                          "type": "string"
+                        },
+                        "api_version": {
+                          "const": 1
+                        },
+                        "base_domain": {
+                          "type": "string"
+                        },
+                        "capabilities": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "deployment_runtime": {
+                          "enum": [
+                            "disabled",
+                            "docker"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "version",
+                        "api_version",
+                        "base_domain",
+                        "capabilities",
+                        "deployment_runtime"
+                      ]
+                    },
+                    "request_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "schema_version",
+                    "data",
+                    "request_id"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Structured error; 400 invalid input, 401 invalid token, 403 missing scope, 404 absent/inaccessible resource, 409 conflict, 429 queue full, 500 internal failure, 503 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/projects": {
+      "get": {
+        "summary": "List projects visible to this token; requires projects:read",
+        "responses": {
+          "200": {
+            "description": "Successful result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "schema_version": {
+                      "const": 1
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Project"
+                      }
+                    },
+                    "request_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "schema_version",
+                    "data",
+                    "request_id"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Structured error; 400 invalid input, 401 invalid token, 403 missing scope, 404 absent/inaccessible resource, 409 conflict, 429 queue full, 500 internal failure, 503 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Register a project; requires projects:write and wildcard project grant",
+        "responses": {
+          "201": {
+            "description": "Successful result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "schema_version": {
+                      "const": 1
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Project"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "schema_version",
+                    "data",
+                    "request_id"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Structured error; 400 invalid input, 401 invalid token, 403 missing scope, 404 absent/inaccessible resource, 409 conflict, 429 queue full, 500 internal failure, 503 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,62}$"
+                  },
+                  "repository": {
+                    "type": "string",
+                    "description": "Credential-free HTTPS or git SSH repository URL."
+                  }
+                },
+                "required": [
+                  "name",
+                  "repository"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          }
+        ]
+      }
+    },
+    "/v1/projects/{id}": {
+      "get": {
+        "summary": "Inspect a project by ID or name; requires projects:read",
+        "responses": {
+          "200": {
+            "description": "Successful result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "schema_version": {
+                      "const": 1
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Project"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "schema_version",
+                    "data",
+                    "request_id"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Structured error; 400 invalid input, 401 invalid token, 403 missing scope, 404 absent/inaccessible resource, 409 conflict, 429 queue full, 500 internal failure, 503 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/v1/projects/{id}/verify": {
+      "post": {
+        "summary": "Queue durable public HTTPS Git verification; requires projects:write",
+        "responses": {
+          "202": {
+            "description": "Successful result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "schema_version": {
+                      "const": 1
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Operation"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "schema_version",
+                    "data",
+                    "request_id"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Structured error; 400 invalid input, 401 invalid token, 403 missing scope, 404 absent/inaccessible resource, 409 conflict, 429 queue full, 500 internal failure, 503 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {},
+                "required": []
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          }
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/v1/operations/{id}": {
+      "get": {
+        "summary": "Inspect accessible operation; requires deployments:read for deployment operations or projects:read for verification",
+        "responses": {
+          "200": {
+            "description": "Successful result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "schema_version": {
+                      "const": 1
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Operation"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "schema_version",
+                    "data",
+                    "request_id"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Structured error; 400 invalid input, 401 invalid token, 403 missing scope, 404 absent/inaccessible resource, 409 conflict, 429 queue full, 500 internal failure, 503 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/v1/tokens": {
+      "get": {
+        "summary": "List non-secret token metadata; requires admin",
+        "responses": {
+          "200": {
+            "description": "Successful result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "schema_version": {
+                      "const": 1
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Token"
+                      }
+                    },
+                    "request_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "schema_version",
+                    "data",
+                    "request_id"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Structured error; 400 invalid input, 401 invalid token, 403 missing scope, 404 absent/inaccessible resource, 409 conflict, 429 queue full, 500 internal failure, 503 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a scoped token; secret is returned once; requires admin",
+        "responses": {
+          "201": {
+            "description": "Successful result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "schema_version": {
+                      "const": 1
+                    },
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "token": {
+                          "$ref": "#/components/schemas/Token"
+                        },
+                        "secret": {
+                          "type": "string",
+                          "pattern": "^dpl_[a-f0-9]{64}$"
+                        }
+                      },
+                      "required": [
+                        "token",
+                        "secret"
+                      ]
+                    },
+                    "request_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "schema_version",
+                    "data",
+                    "request_id"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Structured error; 400 invalid input, 401 invalid token, 403 missing scope, 404 absent/inaccessible resource, 409 conflict, 429 queue full, 500 internal failure, 503 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,62}$"
+                  },
+                  "scopes": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "enum": [
+                        "admin",
+                        "server:read",
+                        "projects:read",
+                        "projects:write"
+                      ]
+                    }
+                  },
+                  "projects": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string",
+                      "description": "Existing project ID or *; admin requires exactly [*]."
+                    }
+                  },
+                  "ttl_seconds": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 31536000
+                  }
+                },
+                "required": [
+                  "name",
+                  "scopes",
+                  "projects",
+                  "ttl_seconds"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tokens/{id}": {
+      "delete": {
+        "summary": "Revoke a token; requires admin",
+        "responses": {
+          "200": {
+            "description": "Successful result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "schema_version": {
+                      "const": 1
+                    },
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "revoked": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "revoked"
+                      ]
+                    },
+                    "request_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "schema_version",
+                    "data",
+                    "request_id"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Structured error; 400 invalid input, 401 invalid token, 403 missing scope, 404 absent/inaccessible resource, 409 conflict, 429 queue full, 500 internal failure, 503 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/v1/deployments": {
+      "get": {
+        "summary": "List accessible deployments; requires deployments:read",
+        "responses": {
+          "200": {
+            "description": "Successful result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "schema_version": {
+                      "const": 1
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Deployment"
+                      }
+                    },
+                    "request_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "schema_version",
+                    "data",
+                    "request_id"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Structured error; 400 invalid input, 401 invalid token, 403 missing scope, 404 absent/inaccessible resource, 409 conflict, 429 queue full, 500 internal failure, 503 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Queue a Dockerfile preview; requires deployments:write and enabled runtime",
+        "responses": {
+          "202": {
+            "description": "Successful result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "schema_version": {
+                      "const": 1
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Operation"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "schema_version",
+                    "data",
+                    "request_id"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Structured error; 400 invalid input, 401 invalid token, 403 missing scope, 404 absent/inaccessible resource, 409 conflict, 429 queue full, 500 internal failure, 503 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "project": {
+                    "type": "string"
+                  },
+                  "ref": {
+                    "type": "string"
+                  },
+                  "subdomain": {
+                    "type": "string"
+                  },
+                  "ttl_seconds": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 604800
+                  }
+                },
+                "required": [
+                  "project",
+                  "ref",
+                  "ttl_seconds"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          }
+        ]
+      }
+    },
+    "/v1/deployments/{id}": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Inspect accessible deployment; requires deployments:read",
+        "responses": {
+          "200": {
+            "description": "Successful result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "schema_version": {
+                      "const": 1
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Deployment"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "schema_version",
+                    "data",
+                    "request_id"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Structured error; 400 invalid input, 401 invalid token, 403 missing scope, 404 absent/inaccessible resource, 409 conflict, 429 queue full, 500 internal failure, 503 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/deployments/{id}/logs": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Read bounded build or application logs; requires deployments:read",
+        "responses": {
+          "200": {
+            "description": "Successful result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "schema_version": {
+                      "const": 1
+                    },
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "logs": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "logs"
+                      ]
+                    },
+                    "request_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "schema_version",
+                    "data",
+                    "request_id"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Structured error; 400 invalid input, 401 invalid token, 403 missing scope, 404 absent/inaccessible resource, 409 conflict, 429 queue full, 500 internal failure, 503 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "build",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ]
+      }
+    },
+    "/v1/deployments/{id}/actions/{action}": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "action",
+          "required": true,
+          "schema": {
+            "enum": [
+              "stop",
+              "wake",
+              "extend",
+              "destroy"
+            ]
+          }
+        }
+      ],
+      "post": {
+        "summary": "Queue lifecycle action; requires deployments:write. Extend requires seconds and an active lease; other actions use an empty object. CLI destroy also requires --yes.",
+        "responses": {
+          "202": {
+            "description": "Successful result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "schema_version": {
+                      "const": 1
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Operation"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "schema_version",
+                    "data",
+                    "request_id"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Structured error; 400 invalid input, 401 invalid token, 403 missing scope, 404 absent/inaccessible resource, 409 conflict, 429 queue full, 500 internal failure, 503 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "seconds": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 604800
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "retryable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "retryable"
+        ]
+      },
+      "ErrorEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schema_version": {
+            "const": 1
+          },
+          "error": {
+            "$ref": "#/components/schemas/Error"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "error",
+          "request_id"
+        ]
+      },
+      "Project": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "repository": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "repository",
+          "created_at"
+        ]
+      },
+      "Token": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "projects": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revoked": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "scopes",
+          "projects",
+          "created_at",
+          "revoked"
+        ]
+      },
+      "Operation": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "project.verify",
+              "deployment.create",
+              "deployment.stop",
+              "deployment.wake",
+              "deployment.extend",
+              "deployment.destroy"
+            ]
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed"
+            ]
+          },
+          "attempts": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deadline": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "result": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "error": {
+            "$ref": "#/components/schemas/Error"
+          },
+          "deployment_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "actor",
+          "project_id",
+          "kind",
+          "status",
+          "attempts",
+          "created_at",
+          "updated_at",
+          "deadline"
+        ]
+      },
+      "Deployment": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "commit": {
+            "type": "string"
+          },
+          "hostname": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "image": {
+            "type": "string"
+          },
+          "health_path": {
+            "type": "string"
+          },
+          "health_timeout": {
+            "type": "string"
+          },
+          "operation_id": {
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "queued",
+              "building",
+              "starting",
+              "running",
+              "stopped",
+              "expired",
+              "failed",
+              "destroying",
+              "destroyed"
+            ]
+          },
+          "port": {
+            "type": "integer"
+          },
+          "ttl_seconds": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "purge_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deadline": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "error": {
+            "$ref": "#/components/schemas/Error"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "ref",
+          "hostname",
+          "url",
+          "state",
+          "ttl_seconds",
+          "created_at",
+          "operation_id",
+          "deadline"
+        ]
+      }
+    }
+  }
+}

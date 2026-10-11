@@ -1,0 +1,10 @@
+version: 1
+listen: 127.0.0.1:7420
+state_dir: ../.deployer/state
+base_domain: localhost
+runtime:
+  enabled: true
+  gateway_image: deployer-gateway:dev
+  gateway_port: 8080
+  control_port: 7421
+  max_deployments: 8

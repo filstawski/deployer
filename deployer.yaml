@@ -1,0 +1,12 @@
+# Deploy this repository as a sample preview: use the hello application.
+version: 1
+project: hello
+source:
+  dockerfile: examples/hello/Dockerfile
+  context: examples/hello
+http:
+  service: web
+  port: 8080
+  healthcheck:
+    path: /health
+    timeout: 30s
