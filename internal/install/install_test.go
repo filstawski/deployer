@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -77,6 +78,42 @@ func TestDryRunNeverTouchesHost(t *testing.T) {
 	if err != nil || r.Plan.Edge != "nginx" {
 		t.Fatalf("TLS plan: %+v %v", r, err)
 	}
+}
+
+func TestRestrictiveBootstrapUmaskAndPermissionRepair(t *testing.T) {
+	i, o, _ := fixture(t)
+	previous := syscall.Umask(0077)
+	defer syscall.Umask(previous)
+	ctx := context.Background()
+	if _, err := i.Apply(ctx, o); err != nil {
+		t.Fatal(err)
+	}
+	public := []string{"/etc/deployer", "/opt/deployer", "/opt/deployer/releases", "/opt/deployer/releases/" + o.Version}
+	check := func() {
+		t.Helper()
+		for _, path := range public {
+			st, err := os.Stat(i.path(path))
+			if err != nil || st.Mode().Perm() != 0755 {
+				t.Fatalf("service cannot traverse %s: %v %v", path, st, err)
+			}
+		}
+		for path, mode := range map[string]os.FileMode{"/var/lib/deployer": 0700, "/var/lib/deployer/operator.token": 0600, "/etc/deployer/install.json": 0600} {
+			st, err := os.Stat(i.path(path))
+			if err != nil || st.Mode().Perm() != mode {
+				t.Fatalf("private permissions changed for %s: %v %v", path, st, err)
+			}
+		}
+	}
+	check()
+	for _, path := range public {
+		if err := os.Chmod(i.path(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := i.Apply(ctx, o); err != nil {
+		t.Fatal(err)
+	}
+	check()
 }
 func TestInstallAndRepeatPreserveCredentialsAndData(t *testing.T) {
 	i, o, calls := fixture(t)

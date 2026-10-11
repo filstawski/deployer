@@ -186,7 +186,7 @@ func (i *Installer) Apply(ctx context.Context, o Options) (Result, error) {
 		}
 	}
 	fmt.Fprintln(i.log, "Preflight passed. Installing Deployer", o.Version)
-	if err = os.MkdirAll(i.path("/etc/deployer"), 0755); err != nil {
+	if err = managedDirectory(i.path("/etc/deployer"), 0755); err != nil {
 		return result, err
 	}
 	lock, err := os.OpenFile(i.path("/etc/deployer/install.lock"), os.O_CREATE|os.O_RDWR, 0600)
@@ -236,8 +236,10 @@ func (i *Installer) Apply(ctx context.Context, o Options) (Result, error) {
 	if _, err = i.runStep(ctx, "runuser", "-u", "deployer", "--", "docker", "--host", "unix:///var/run/docker.sock", "buildx", "version"); err != nil {
 		return result, fmt.Errorf("Buildx must be installed for the service account: %w", err)
 	}
-	if err = os.MkdirAll(i.path(p.ReleaseDir), 0755); err != nil {
-		return result, err
+	for _, dir := range []string{"/opt/deployer", "/opt/deployer/releases", p.ReleaseDir} {
+		if err = managedDirectory(i.path(dir), 0755); err != nil {
+			return result, err
+		}
 	}
 	for _, name := range []string{"deployer", "deployerd", "deployer-gateway"} {
 		b, e := os.ReadFile(filepath.Join(bundle, name))
@@ -251,7 +253,7 @@ func (i *Installer) Apply(ctx context.Context, o Options) (Result, error) {
 	image := saved.Image
 	if image == "" {
 		dir := i.path(filepath.Join(p.ReleaseDir, "gateway"))
-		if err = os.MkdirAll(dir, 0755); err != nil {
+		if err = managedDirectory(dir, 0755); err != nil {
 			return result, err
 		}
 		b, e := os.ReadFile(filepath.Join(bundle, "deployer-gateway"))
@@ -344,6 +346,25 @@ func (i *Installer) Apply(ctx context.Context, o Options) (Result, error) {
 	result.Status = "installed"
 	return result, nil
 }
+
+// The bootstrap deliberately uses umask 077. Explicitly set permissions on
+// owned public directories so the service user can traverse them on first
+// install and when resuming an installation made with restrictive permissions.
+// Credential files and the state directory retain their private modes.
+func managedDirectory(path string, mode os.FileMode) error {
+	if err := os.MkdirAll(path, mode); err != nil {
+		return err
+	}
+	st, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !st.IsDir() {
+		return fmt.Errorf("refusing non-directory installation path %s", path)
+	}
+	return os.Chmod(path, mode)
+}
+
 func regexpImage(s string) bool {
 	if !strings.HasPrefix(s, "sha256:") || len(s) != 71 {
 		return false
