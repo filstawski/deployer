@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/url"
+	"strings"
 	"time"
 
 	"deployer/internal/domain"
@@ -11,8 +12,10 @@ import (
 )
 
 func (a *app) deploy(ctx context.Context, args []string) (any, error) {
-	if len(args) == 0 {
-		return nil, domain.Fail("INVALID_INPUT", "deploy requires a project and --ref")
+	project := ""
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		project = args[0]
+		args = args[1:]
 	}
 	f := a.flags("deploy")
 	ref := f.String("ref", "", "branch or full commit SHA")
@@ -21,7 +24,7 @@ func (a *app) deploy(ctx context.Context, args []string) (any, error) {
 	key := f.String("idempotency-key", domain.ID("request"), "retry key")
 	wait := f.Bool("wait", false, "wait for readiness")
 	timeout := f.Duration("timeout", 20*time.Minute, "client wait timeout")
-	if err := parse(f, args[1:]); err != nil {
+	if err := parse(f, args); err != nil {
 		return nil, err
 	}
 	if err := domain.ValidateRef(*ref); err != nil {
@@ -34,7 +37,13 @@ func (a *app) deploy(ctx context.Context, args []string) (any, error) {
 	if duration > 7*24*time.Hour || *timeout <= 0 {
 		return nil, domain.Fail("INVALID_INPUT", "TTL must be at most 7d and timeout must be positive")
 	}
-	data, err := a.call(ctx, "POST", "/v1/deployments", *key, domain.DeployInput{Project: args[0], Ref: *ref, Subdomain: *sub, TTLSeconds: int64(duration.Seconds())})
+	if project == "" {
+		project, err = a.autoProject(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+	data, err := a.call(ctx, "POST", "/v1/deployments", *key, domain.DeployInput{Project: project, Ref: *ref, Subdomain: *sub, TTLSeconds: int64(duration.Seconds())})
 	if err != nil {
 		return nil, err
 	}

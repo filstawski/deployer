@@ -9,7 +9,7 @@ bin_dir=${HOME:-}/.local/bin
 mode=client
 usage() {
   cat <<'HELP'
-Usage: sh install.sh [client|server] [options]
+Usage: sh install.sh [client|server|upgrade] [options]
   --version vX.Y.Z     Install a pinned release (default: latest stable)
   --repository O/R    Release repository (default: filstawski/deployer)
   --from DIRECTORY    Install checksummed local release files, without downloads
@@ -21,7 +21,7 @@ Server setup supports --dry-run; a real installation requires Linux and root.
 HELP
 }
 fail() { printf '%s\n' "deployer installer: $*" >&2; exit 1; }
-case "${1:-}" in client|server) mode=$1; shift ;; esac
+case "${1:-}" in client|server|upgrade) mode=$1; shift ;; esac
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --version|--repository|--from|--bin-dir)
@@ -33,12 +33,12 @@ while [ "$#" -gt 0 ]; do
     *) fail "unknown option $1 (put server setup options after --)" ;;
   esac
 done
-[ "$mode" = server ] || [ "$#" = 0 ] || fail "client installation takes no setup options"
+[ "$mode" != client ] || [ "$#" = 0 ] || fail "client installation takes no setup options"
 case "$repo" in *[!A-Za-z0-9_./-]*) fail 'invalid GitHub repository';; esac
 printf '%s\n' "$repo" | LC_ALL=C grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' || fail 'invalid GitHub repository'
 case "$(uname -s)" in Darwin) target_os=darwin;; Linux) target_os=linux;; *) fail 'supported clients: macOS and Linux (use WSL on Windows)' ;; esac
 case "$(uname -m)" in arm64|aarch64) target_arch=arm64;; x86_64|amd64) target_arch=amd64;; *) fail 'supported architectures: amd64 and arm64' ;; esac
-[ "$mode" != server ] || [ "$target_os" = linux ] || fail 'server installation requires Linux'
+[ "$mode" = client ] || [ "$target_os" = linux ] || fail 'server installation requires Linux'
 task_tmp=$(mktemp -d "${TMPDIR:-/tmp}/deployer-install.XXXXXXXX")
 staged=
 cleanup() { rm -rf "$task_tmp"; if [ -n "$staged" ]; then rm -f "$staged"; fi; }
@@ -73,16 +73,18 @@ verify() {
   [ "$actual" = "$expected" ] || fail "checksum mismatch: $1; nothing installed"
 }
 binaries=deployer
-[ "$mode" != server ] || binaries='deployer deployerd deployer-gateway'
+[ "$mode" = client ] || binaries='deployer deployerd deployer-gateway'
 for binary in $binaries; do
   asset="${binary}_${release}_${target_os}_${target_arch}"
   fetch "$asset" "$task_tmp/$binary"
   verify "$asset" "$task_tmp/$binary"
   chmod 755 "$task_tmp/$binary"
 done
-if [ "$mode" = server ]; then
+if [ "$mode" != client ]; then
   # Keep this shell alive so its trap removes downloads after setup returns.
-  "$task_tmp/deployer" setup --bundle "$task_tmp" "$@"
+  action=setup
+  [ "$mode" != upgrade ] || action=upgrade
+  "$task_tmp/deployer" "$action" --bundle "$task_tmp" "$@"
 else
   case "$bin_dir" in /*) ;; *) fail '--bin-dir must be an absolute path';; esac
   [ ! -L "$bin_dir/deployer" ] || fail 'destination is a symlink; choose a different --bin-dir'

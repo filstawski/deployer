@@ -23,6 +23,9 @@ class ConnectTests(unittest.TestCase):
             binary.touch()
             secret = 'dpl_' + 'a' * 64
             calls = []
+            saved_token = home / 'saved.token'
+            saved_token.write_text(secret)
+            saved_token.chmod(0o600)
 
             def run(args, **kwargs):
                 calls.append(args)
@@ -37,7 +40,8 @@ class ConnectTests(unittest.TestCase):
                         return SimpleNamespace(returncode=3, stdout=json.dumps({'error': {'message': 'invalid token'}}))
                     data = {'name': 'deployer', 'api_version': 1}
                 elif 'list' in args:
-                    data = {'servers': {'pilot': {}} if existing else {}}
+                    connection = {'url': 'https://api.example.com', 'token_file': str(saved_token)} if existing == 'https' else {}
+                    data = {'servers': {'pilot': connection} if existing else {}}
                 else:
                     data = {}
                 return SimpleNamespace(returncode=0, stdout=json.dumps({'data': data}))
@@ -50,7 +54,7 @@ class ConnectTests(unittest.TestCase):
                  patch.object(module.subprocess, 'run', side_effect=run), \
                  contextlib.redirect_stdout(io.StringIO()) as out, \
                  contextlib.redirect_stderr(io.StringIO()):
-                if existing:
+                if existing and existing != 'https':
                     with self.assertRaises(SystemExit):
                         module.connect()
                     prompt.assert_not_called()
@@ -59,6 +63,9 @@ class ConnectTests(unittest.TestCase):
                         module.connect()
                 else:
                     module.connect()
+                    if existing == 'https':
+                        prompt.assert_not_called()
+                        self.assertTrue(any('use' in args for args in calls))
                 self.assertNotIn(secret, out.getvalue())
             files = list((home / '.config/deployer/credentials').glob('*'))
             if fail or existing:
@@ -77,6 +84,12 @@ class ConnectTests(unittest.TestCase):
 
     def test_existing_context_is_not_overwritten(self):
         self.exercise(existing=True)
+
+    def test_existing_https_context_is_verified_and_reused(self):
+        self.exercise(existing='https')
+
+    def test_existing_https_context_auth_failure_does_not_select_it(self):
+        self.exercise(existing='https', fail=True)
 
 
 if __name__ == '__main__':

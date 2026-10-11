@@ -74,7 +74,7 @@ sudo deployer setup --bundle /opt/deployer/current \
   --tls-key /etc/letsencrypt/live/surdic.run/privkey.pem
 ```
 
-Rerunning the same release preserves deployment state, credentials, and unchanged configuration. It can resume an interrupted install. Edited server settings or service files are never silently replaced. Changing installation ports/domain, adopting an unrelated installation, or replacing an installed server release is refused. **Server upgrades/rollback are not implemented yet**; they need coordinated database and gateway compatibility handling. Client updates are already supported.
+Rerunning the same release preserves deployment state, credentials, and unchanged configuration. It can resume an interrupted install. Edited server settings or service files are never silently replaced. Changing installation ports/domain or adopting an unrelated installation is refused. To replace an installed release, use the dedicated **upgrade** installer mode; see the [upgrade and GitHub guide](github.md). It preserves settings and credentials, backs up the stopped database, and attempts to restore the previous release if startup fails. Client updates are also supported.
 
 If ports are occupied during a fresh install, choose loopback ports explicitly with `--api-port`, `--gateway-port`, and `--control-port`. Defaults are 7420, 8080, and 7421. Keep those same values when resuming setup.
 

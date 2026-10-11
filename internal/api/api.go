@@ -13,11 +13,13 @@ import (
 	"deployer/internal/config"
 	"deployer/internal/deployments"
 	"deployer/internal/domain"
+	"deployer/internal/githubapp"
 	"deployer/internal/store/sqlite"
 	"deployer/internal/version"
 )
 
 type Server struct {
+	GitHub      *githubapp.App
 	Store       *sqlite.Store
 	Config      config.Server
 	Log         *slog.Logger
@@ -32,6 +34,9 @@ func principal(r *http.Request) domain.Token { return r.Context().Value(principa
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("POST /v1/github/setup", s.githubSetup)
+	mux.HandleFunc("POST /v1/github/connect", s.github)
+	mux.HandleFunc("GET /v1/github", s.github)
 	mux.HandleFunc("GET /v1/server", s.status)
 	mux.HandleFunc("POST /v1/deployments", s.deploy)
 	mux.HandleFunc("GET /v1/deployments", s.deployments)
@@ -61,6 +66,10 @@ func (s *Server) Handler() http.Handler {
 				return
 			}
 			s.write(w, r, 200, map[string]string{"status": "ok"})
+			return
+		}
+		if s.GitHub != nil && r.Method == "GET" && (r.URL.Path == "/v1/github/callback" || strings.HasPrefix(r.URL.Path, "/v1/github/setup/")) {
+			s.GitHub.Browser(w, r, s.githubAdminActive)
 			return
 		}
 		auth := r.Header.Get("Authorization")
@@ -159,6 +168,9 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	}
 	runtime := "disabled"
 	capabilities := []string{"projects", "scoped_tokens", "durable_repository_verification"}
+	if s.GitHub != nil {
+		capabilities = append(capabilities, "github_app")
+	}
 	if s.Deployments != nil {
 		runtime = "docker"
 		capabilities = append(capabilities, "dockerfile_previews", "deployment_lifecycle", "ttl")

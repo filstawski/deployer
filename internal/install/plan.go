@@ -63,7 +63,7 @@ func (o Options) Plan() (Plan, error) {
 	} else {
 		p.Next = append(p.Next, "HTTPS is pending: obtain a wildcard certificate, then run deployer setup with --tls-cert and --tls-key")
 	}
-	p.Next = append(p.Next, "Point wildcard DNS at this server", "Create a separate laptop credential, then run deployer server add NAME --ssh USER@HOST --credential-file FILE; see docs/installation.md")
+	p.Next = append(p.Next, "Point wildcard DNS at this server", "Expose the authenticated HTTPS API and create a laptop credential; see docs/manual-deployments.md")
 	return p, nil
 }
 

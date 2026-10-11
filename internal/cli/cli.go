@@ -37,7 +37,11 @@ Available now:
   project list
   project inspect NAME_OR_ID
   project verify NAME_OR_ID [--wait --timeout 120s --idempotency-key KEY]
-  deploy PROJECT --ref BRANCH [--ttl 1d --subdomain NAME --wait]
+  github setup [--public-url URL --organization NAME --no-browser]
+  github connect [--no-browser]
+  github status
+  upgrade --bundle DIR [--dry-run]
+  deploy [PROJECT] --ref BRANCH [--ttl 1d --subdomain NAME --wait]
   list
   inspect ID
   logs ID [--build]
@@ -53,7 +57,7 @@ Available now:
 Global options: --json, --server URL, --token-file FILE, --contexts-file FILE
 Environment: DEPLOYER_SERVER, DEPLOYER_TOKEN_FILE
 Deployment commands accept --idempotency-key KEY and --wait --timeout DURATION.
-Idle sleep and private repositories are not implemented yet.
+Private GitHub repositories use a shared GitHub App connection. Idle sleep is not implemented yet.
 `
 
 type options struct {
@@ -238,6 +242,8 @@ func (a *app) execute(ctx context.Context, args []string) (any, error) {
 		return map[string]string{"version": version.Version}, nil
 	}
 	switch args[0] {
+	case "upgrade":
+		return a.upgrade(ctx, args[1:])
 	case "setup":
 		return a.setup(ctx, args[1:])
 	case "deploy":
@@ -249,6 +255,8 @@ func (a *app) execute(ctx context.Context, args []string) (any, error) {
 		return nil, domain.Fail("INVALID_INPUT", "expected a subcommand; run deployer help")
 	}
 	switch args[0] {
+	case "github":
+		return a.github(ctx, args[1:])
 	case "server":
 		return a.server(ctx, args[1:])
 	case "project":

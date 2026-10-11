@@ -86,7 +86,7 @@ func (c Server) Validate() error {
 	}
 	ip := net.ParseIP(host)
 	if ip == nil || !ip.IsLoopback() {
-		return fmt.Errorf("management API must bind to a loopback IP; remote access uses SSH")
+		return fmt.Errorf("management API must bind to a loopback IP; remote access uses an authenticated HTTPS reverse proxy or SSH tunnel")
 	}
 	p, err := strconv.Atoi(port)
 	if err != nil || p < 1 || p > 65535 {

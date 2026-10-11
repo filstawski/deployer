@@ -14,18 +14,20 @@ import (
 
 var commitRE = regexp.MustCompile(`^[a-f0-9]{40}([a-f0-9]{24})?$`)
 
-// Checkout supports public HTTPS source in this slice. Private deploy-key
-// enrollment is deliberately separate from inheriting host SSH credentials.
+// Checkout fetches public HTTPS source without inheriting host credentials.
 func Checkout(ctx context.Context, repository, ref, pinned, destination string) (string, error) {
+	return checkoutPublic(ctx, repository, ref, pinned, destination)
+}
+func checkoutPublic(ctx context.Context, repository, ref, pinned, destination string, providers ...TokenProvider) (string, error) {
 	if err := domain.ValidateRepository(repository); err != nil {
 		return "", err
 	}
 	if !strings.HasPrefix(repository, "https://") {
-		return "", domain.Fail("UNSUPPORTED_FEATURE", "source builds currently require a public HTTPS repository")
+		return "", domain.Fail("UNSUPPORTED_FEATURE", "source builds require an HTTPS repository")
 	}
-	return checkout(ctx, repository, ref, pinned, destination, false)
+	return checkout(ctx, repository, ref, pinned, destination, false, providers...)
 }
-func checkout(ctx context.Context, repository, ref, pinned, destination string, localTest bool) (string, error) {
+func checkout(ctx context.Context, repository, ref, pinned, destination string, localTest bool, providers ...TokenProvider) (string, error) {
 	if err := domain.ValidateRef(ref); err != nil {
 		return "", err
 	}
@@ -45,6 +47,11 @@ func checkout(ctx context.Context, repository, ref, pinned, destination string, 
 		return "", err
 	}
 	env := []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=/usr/bin/false", "LC_ALL=C"}
+	auth, err := authentication(ctx, repository, providers)
+	if err != nil {
+		return "", err
+	}
+	env = append(env, auth...)
 	filePolicy := "never"
 	if localTest {
 		filePolicy = "always"

@@ -41,8 +41,8 @@ An existing output file is not overwritten. If you previously issued this creden
 Install the current released client if it is not installed:
 
 ```sh
-curl -fsSL https://github.com/filstawski/deployer/releases/download/v0.1.0-dev.2/install.sh \
-  | sh -s -- client --version v0.1.0-dev.2
+curl -fsSL https://github.com/filstawski/deployer/releases/download/v0.1.0-dev.3/install.sh \
+  | sh -s -- client --version v0.1.0-dev.3
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
@@ -60,7 +60,7 @@ curl -fsSL https://raw.githubusercontent.com/filstawski/deployer/main/scripts/co
 python3 /tmp/deployer-connect.py --url https://api.surdic.run --name pilot
 ```
 
-Paste the laptop token when prompted. Input is hidden. The helper verifies the authenticated HTTPS API, writes an owner-only credential file under `~/.config/deployer/credentials/`, and selects a saved `pilot` context. It refuses to replace an existing context or credential file. This is token enrollment; browser/device pairing is not implemented yet.
+Paste the laptop token when prompted. Input is hidden. The helper verifies the authenticated HTTPS API, writes an owner-only credential file under `~/.config/deployer/credentials/`, and selects a saved `pilot` context. Running it again for the same HTTPS connection verifies and reuses the saved credential without prompting. It refuses to replace a context pointing elsewhere or an existing credential file. This is token enrollment; browser/device pairing is not implemented yet.
 
 Then run locally:
 
@@ -108,7 +108,7 @@ The readiness path must return HTTP 2xx. Deployer provides `PORT` and `DEPLOYER_
 
 ## 5. Register and deploy
 
-Current release limitation: **public HTTPS repositories only**. Private Git credentials are not yet supported by v0.1.0-dev.2. A Deployer API token authenticates your CLI; it does not give the server GitHub access. Do not place a GitHub token in a repository URL or make a private repository public just to get past this limit.
+For private GitHub repositories, follow the [one-time GitHub App setup](github.md). That connection is reused across all selected repositories. You can then run `deployer deploy --ref main --ttl 4h --wait` inside a repository to register or reuse its project automatically. A Deployer API token authenticates your CLI; the server uses its GitHub App to fetch source.
 
 For a public project with a committed recipe:
 

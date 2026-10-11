@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Deployer control-plane API",
-    "version": "0.1.0-dev",
-    "description": "Implemented authenticated project, token, operation, and Dockerfile deployment endpoints. Docker runtime is opt-in. Requests are limited to 64 KiB. Healthz is the only anonymous management endpoint."
+    "version": "0.1.0-dev.3",
+    "description": "Authenticated projects, tokens, operations, deployments, and reusable GitHub App connections. JSON bodies are limited to 64 KiB. Healthz and short-lived GitHub browser setup/callback routes are anonymous; setup links can only be minted by an administrator."
   },
   "servers": [
     {
@@ -1032,6 +1032,282 @@
             }
           }
         ]
+      }
+    },
+    "/v1/github/setup": {
+      "post": {
+        "summary": "Create a ten-minute GitHub App registration link (admin only)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "public_url": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "organization": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "schema_version",
+                    "data",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "schema_version": {
+                      "const": 1
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "url",
+                        "expires_at"
+                      ],
+                      "properties": {
+                        "url": {
+                          "type": "string",
+                          "format": "uri"
+                        },
+                        "expires_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      }
+                    },
+                    "request_id": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Structured authentication, validation, configuration, or GitHub upstream error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/github/connect": {
+      "post": {
+        "summary": "Get app installation URL (projects:write and * grant)",
+        "responses": {
+          "200": {
+            "description": "Successful result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "schema_version",
+                    "data",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "schema_version": {
+                      "const": 1
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "url": {
+                          "type": "string",
+                          "format": "uri"
+                        }
+                      },
+                      "required": [
+                        "url"
+                      ]
+                    },
+                    "request_id": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Structured authentication, validation, configuration, or GitHub upstream error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/github": {
+      "get": {
+        "summary": "List GitHub App installations (projects:write and * grant)",
+        "responses": {
+          "200": {
+            "description": "Successful result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "schema_version",
+                    "data",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "schema_version": {
+                      "const": 1
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "url",
+                        "installations"
+                      ],
+                      "properties": {
+                        "url": {
+                          "type": "string",
+                          "format": "uri"
+                        },
+                        "installations": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "integer"
+                              },
+                              "account": {
+                                "type": "object",
+                                "properties": {
+                                  "login": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              "repository_selection": {
+                                "type": "string"
+                              },
+                              "suspended_at": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "format": "date-time"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "request_id": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Structured authentication, validation, configuration, or GitHub upstream error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/github/setup/{state}": {
+      "get": {
+        "security": [],
+        "summary": "Browser setup page; requires unexpired administrator-issued capability",
+        "parameters": [
+          {
+            "name": "state",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "HTML form for GitHub App creation; sets secure HttpOnly SameSite cookie"
+          },
+          "400": {
+            "description": "Invalid, expired, consumed, or in-progress setup"
+          },
+          "403": {
+            "description": "Initiating administrator token expired or revoked"
+          }
+        }
+      }
+    },
+    "/v1/github/callback": {
+      "get": {
+        "security": [],
+        "summary": "Complete GitHub App manifest registration; requires state and browser cookie",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "303": {
+            "description": "Identity saved; redirect to GitHub app installation"
+          },
+          "400": {
+            "description": "Invalid state or browser binding"
+          },
+          "403": {
+            "description": "Administrator token no longer active"
+          },
+          "502": {
+            "description": "App conversion or persistence failed"
+          }
+        }
       }
     }
   },

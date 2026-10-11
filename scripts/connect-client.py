@@ -45,7 +45,16 @@ def connect():
 
     contexts = cli('server', 'list')
     if args.name in contexts['servers']:
-        parser.error('that server context already exists; select another --name')
+        existing = contexts['servers'][args.name]
+        if existing.get('url', '').rstrip('/') != args.url.rstrip('/') or existing.get('ssh'):
+            parser.error('that context uses a different connection; it was not changed')
+        status = cli('--server', args.url, '--token-file', existing['token_file'], 'server', 'status')
+        if status.get('name') != 'deployer' or status.get('api_version') != 1:
+            raise RuntimeError('the endpoint did not identify as a compatible Deployer server')
+        cli('server', 'use', args.name)
+        print('Connected to', args.url, 'using the existing saved credential.')
+        print('Try: deployer list')
+        return
     directory = Path.home() / '.config/deployer/credentials'
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     path = directory / (args.name + '.token')

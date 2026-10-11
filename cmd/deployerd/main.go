@@ -19,6 +19,7 @@ import (
 	"deployer/internal/config"
 	"deployer/internal/credentials"
 	"deployer/internal/deployments"
+	"deployer/internal/githubapp"
 	"deployer/internal/operations"
 	"deployer/internal/processlock"
 	docker "deployer/internal/runtime/docker"
@@ -120,6 +121,10 @@ func run(args []string) error {
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+	github, err := githubapp.Open(c.StateDir)
+	if err != nil {
+		return err
+	}
 	var service *deployments.Service
 	if c.Runtime.Enabled {
 		id, err := s.InstallationID()
@@ -150,12 +155,12 @@ func run(args []string) error {
 				}
 			}
 		}
-		service = &deployments.Service{Store: s, Config: c, Runtime: runtime, Fetch: git.Checkout, Log: log}
+		service = &deployments.Service{Store: s, Config: c, Runtime: runtime, Fetch: git.CheckoutWithAuth(github.Token), Log: log}
 		if err = service.Publish(ctx); err != nil {
 			return err
 		}
 	}
-	a := &api.Server{Store: s, Config: c, Log: log, Deployments: service}
+	a := &api.Server{Store: s, Config: c, Log: log, Deployments: service, GitHub: github}
 	server := &http.Server{Addr: c.Listen, Handler: a.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	listener, err := net.Listen("tcp", c.Listen)
 	if err != nil {
@@ -163,7 +168,7 @@ func run(args []string) error {
 	}
 	errs := make(chan error, 2)
 	var workers sync.WaitGroup
-	worker := &operations.Worker{Store: s, Verify: git.Verify(c.StateDir), Log: log}
+	worker := &operations.Worker{Store: s, Verify: git.Verify(c.StateDir, github.Token), Log: log}
 	if service != nil {
 		worker.Handle = service.Handle
 		worker.Failed = service.Failed
