@@ -37,7 +37,7 @@ curl -fsSL https://github.com/filstawski/deployer/releases/download/v0.1.0-dev.2
   | sh -s -- client --version v0.1.0-dev.2
 ```
 
-The binary is installed in `~/.local/bin`. The installer prints a reminder if that directory is missing from PATH. To connect from the laptop, follow the [credential and SSH connection steps](docs/installation.md#connect-and-check). Laptop CLI SSH access requires a key/configuration usable by its local OpenSSH client; server installation itself works entirely inside your existing SSH app.
+The binary is installed in `~/.local/bin`. The installer prints a reminder if that directory is missing from PATH. Connect the laptop directly to the authenticated HTTPS API using the [manual deployment guide](docs/manual-deployments.md). No local SSH key or tunnel is needed. Use your existing SSH app for the one-time server configuration.
 
 ## Build from source
 
@@ -52,6 +52,8 @@ make check
 Follow [the control-plane setup guide](docs/development.md) to bootstrap a credential, then [the Docker preview guide](docs/docker-previews.md) to run deployments. Build outputs are `bin/deployer`, `bin/deployerd`, and `bin/deployer-gateway`.
 
 ## Project documents
+
+- [Manual deployment guide: HTTPS connection, tokens, recipes, and commands](docs/manual-deployments.md).
 
 - [Client/server installers and release status](docs/installation.md).
 - [Local setup and authentication](docs/development.md).

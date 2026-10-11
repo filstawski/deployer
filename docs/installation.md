@@ -97,6 +97,8 @@ The service runs as a dedicated `deployer` user. Its access to the Docker socket
 
 ## Connect and check
 
+**Default: connect the local CLI through the authenticated HTTPS API.** Follow the [manual deployment guide](manual-deployments.md) for `api.surdic.run`, laptop token enrollment, and deploying projects. SSH contexts below are an optional transport, not required for normal use.
+
 As root on an installed server, the CLI automatically discovers the local configuration and bootstrap credential when no explicit or saved context is selected:
 
 ```sh
