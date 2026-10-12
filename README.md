@@ -4,11 +4,21 @@ Self-hosted preview environments for Git branches. Give it a branch, get a URL,
 and it cleans up after itself.
 
 ```console
-$ deployer deploy --ref design/a --name design-a --ttl 3d
-Deploying design/a as design-a → https://design-a.previews.example.com
-✓ design-a is live at https://design-a.previews.example.com
-  Ref      design/a @ 7d63b83b6f7e
-  Expires  2026-10-15 14:05 (in 3d)
+$ deployer deploy
+Project   shop  https://github.com/acme/shop.git
+Branch    design/a
+Name      shop-design-a
+Lifetime  3 days
+Deploying design/a as shop-design-a → https://shop-design-a.previews.example.com
+✓ Building design/a @ 7d63b83b6f7e 41s
+✓ Starting and waiting for /health to respond 3s
+╭─ ✓ shop-design-a is live ───────────────────────╮
+│ https://shop-design-a.previews.example.com      │
+│                                                 │
+│ Ref      design/a @ 7d63b83b6f7e                │
+│ Project  shop                                   │
+│ Expires  2026-10-15 14:05 (in 3d)               │
+╰─────────────────────────────────────────────────╯
 ```
 
 Deployer runs on one Linux server with Docker. Each deployment is built from an
@@ -17,8 +27,9 @@ hostname, and expires after a lifetime you choose. It is built for developers
 sharing feature previews and design variants, and for AI agents that need a
 predictable, scriptable way to put a branch online.
 
-- **One command.** `deployer deploy` in a repository deploys its current branch.
-  The project is registered on first use.
+- **One command.** `deployer deploy` in a repository asks which branch, what
+  name, and for how long, with sensible answers already filled in. The project is
+  registered on first use. Every question also has a flag, for scripts.
 - **Isolated.** Every preview has its own container, network, and resource limits.
   Previews cannot reach each other.
 - **Temporary by default.** Lifetimes start when the app is ready. Expired

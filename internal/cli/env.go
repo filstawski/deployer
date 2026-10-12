@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/filstawski/deployer/internal/install"
@@ -23,8 +24,15 @@ type Env struct {
 	// Interactive reports whether a person is at the terminal, which enables
 	// prompts and in-place progress output.
 	Interactive bool
-	// ReadSecret reads a line without echoing it.
-	ReadSecret func(prompt string) (string, error)
+	// Terminal reports whether stdout is a terminal, which enables panels,
+	// styled tables, and color. Output for pipes and files stays plain.
+	Terminal bool
+	// Width is the terminal's width in columns, or 0 if unknown.
+	Width int
+	// Environ is the process environment, used to detect color support.
+	Environ []string
+	// Prompter asks questions; nil disables prompts.
+	Prompter Prompter
 	// OpenBrowser opens a URL; nil disables opening browsers.
 	OpenBrowser func(url string) error
 	// ServerConfig is the local server configuration consulted when running
@@ -49,7 +57,17 @@ func ProcessEnv() Env {
 	env := Env{
 		Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, Getenv: os.Getenv,
 		Interactive: term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stderr.Fd())),
+		Terminal:    term.IsTerminal(int(os.Stdout.Fd())),
+		Environ:     os.Environ(),
 		OpenBrowser: openBrowser, Now: time.Now,
+	}
+	if w, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil {
+		env.Width = w
+	} else if w, _, err := term.GetSize(int(os.Stderr.Fd())); err == nil {
+		env.Width = w
+	}
+	if env.Interactive {
+		env.Prompter = huhPrompter{in: os.Stdin, out: os.Stderr}
 	}
 	env.WorkDir, _ = os.Getwd()
 	env.ConfigDir = os.Getenv("DEPLOYER_CONFIG_DIR")
@@ -73,11 +91,16 @@ func ProcessEnv() Env {
 	}
 	env.ReleaseURL = os.Getenv("DEPLOYER_RELEASE_URL")
 	env.ServerReleases = install.ReleasesDir
-	env.ReadSecret = func(prompt string) (string, error) {
-		io.WriteString(os.Stderr, prompt)
-		b, err := term.ReadPassword(int(os.Stdin.Fd()))
-		io.WriteString(os.Stderr, "\n")
-		return string(b), err
-	}
 	return env
+}
+
+// supportsLinks reports whether the terminal shows OSC 8 hyperlinks. Others
+// may print them as garbage, so this is an allowlist.
+func (e Env) supportsLinks() bool {
+	switch e.Getenv("TERM_PROGRAM") {
+	case "iTerm.app", "WezTerm", "vscode", "ghostty", "WarpTerminal":
+		return true
+	}
+	term := e.Getenv("TERM")
+	return strings.Contains(term, "kitty") || strings.Contains(term, "ghostty") || e.Getenv("VTE_VERSION") != ""
 }

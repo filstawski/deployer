@@ -69,12 +69,12 @@ Roles:
 				created.Secret = ""
 			}
 			return a.out.result(created, func() {
-				a.out.line("✓ Created token %s (%s)", created.Token.Name, created.Token.ID)
+				a.out.success("Created token %s (%s)", created.Token.Name, created.Token.ID)
 				if output != "" {
 					a.out.line("  Saved to %s (mode 600)", output)
 					return
 				}
-				a.out.line("\n  %s\n", created.Secret)
+				a.out.line("\n  %s\n", a.out.st.bold(created.Secret))
 				a.out.line("This secret is shown once. Use it with: deployer login %s", a.loginURL(ctx, c))
 			})
 		},
@@ -104,14 +104,15 @@ Roles:
 				rows := make([][]string, len(tokens))
 				now := a.env.Now()
 				for i, t := range tokens {
-					state := "active"
+					st := a.out.st
+					state := st.ok("active")
 					switch {
 					case t.RevokedAt != nil:
-						state = "revoked"
+						state = st.muted("revoked")
 					case !t.Active(now):
-						state = "expired"
+						state = st.warn("expired")
 					}
-					rows[i] = []string{t.ID, t.Name, domain.FormatScopes(t.Scopes), strings.Join(t.Projects, ","), expiry(t.ExpiresAt, a.out), state}
+					rows[i] = []string{st.muted(t.ID), st.bold(t.Name), domain.FormatScopes(t.Scopes), strings.Join(t.Projects, ","), expiry(t.ExpiresAt, a.out), state}
 				}
 				a.out.table([]string{"ID", "NAME", "SCOPES", "PROJECTS", "EXPIRES", "STATE"}, rows)
 			})
@@ -131,7 +132,7 @@ Roles:
 			if err != nil {
 				return err
 			}
-			return a.out.result(t, func() { a.out.line("✓ Revoked %s (%s)", t.Name, t.ID) })
+			return a.out.result(t, func() { a.out.success("Revoked %s (%s)", t.Name, t.ID) })
 		},
 	}
 	cmd.AddCommand(create, list, revoke)

@@ -16,12 +16,15 @@ import (
 // once, which keeps CI and agent logs readable.
 type status struct {
 	w        io.Writer
+	st       styles
 	live     bool
 	disabled bool
 	start    time.Time
 
 	mu    sync.Mutex
+	key   string // Identifies the current step.
 	text  string
+	since time.Time // When the current step started.
 	frame int
 	stop  chan struct{}
 	done  sync.WaitGroup
@@ -32,7 +35,7 @@ var frames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "�
 // newStatus starts a status line. animate selects the in-place line on a
 // terminal; output that interleaves other text must not animate.
 func (a *app) newStatus(animate bool) *status {
-	s := &status{w: a.env.Stderr, live: animate && a.env.Interactive, disabled: a.quiet, start: a.env.Now(), stop: make(chan struct{})}
+	s := &status{w: a.stderr, st: a.errs, live: animate && a.env.Interactive, disabled: a.quiet, start: time.Now(), stop: make(chan struct{})}
 	if s.live && !s.disabled {
 		s.done.Add(1)
 		go func() {
@@ -55,17 +58,34 @@ func (a *app) newStatus(animate bool) *status {
 	return s
 }
 
-// set changes the status text.
-func (s *status) set(text string) {
+// set changes the status text, starting a new step.
+func (s *status) set(text string) { s.step(text, text) }
+
+// step reports progress on a step identified by key. A new key finishes the
+// previous step, which stays on screen with its duration; the same key only
+// updates the text, for example once a build's commit is known.
+func (s *status) step(key, text string) {
 	if s.disabled {
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if text == s.text {
+	if key == s.key {
+		if text != s.text {
+			s.text = text
+			if s.live {
+				s.render()
+			}
+		}
 		return
 	}
-	s.text = text
+	if s.live && s.text != "" {
+		fmt.Fprintf(s.w, "\r\033[K%s %s %s\n", s.st.ok("✓"), s.text, s.st.muted(domain.FormatDuration(time.Since(s.since))))
+	}
+	s.key, s.text, s.since = key, text, time.Now()
+	if text == "" {
+		return
+	}
 	if s.live {
 		s.render()
 	} else {
@@ -89,6 +109,9 @@ func (s *status) print(text string) {
 	}
 }
 
+// complete marks the current step as finished.
+func (s *status) complete() { s.step("", "") }
+
 // finish removes the status line.
 func (s *status) finish() {
 	close(s.stop)
@@ -100,7 +123,7 @@ func (s *status) finish() {
 
 func (s *status) render() {
 	if s.text != "" {
-		fmt.Fprintf(s.w, "\r\033[K%s %s (%s)", frames[s.frame%len(frames)], s.text, s.elapsed())
+		fmt.Fprintf(s.w, "\r\033[K%s %s %s", s.st.fg(frames[s.frame%len(frames)], colorAccent), s.text, s.st.muted(domain.FormatDuration(time.Since(s.since))))
 	}
 }
 
@@ -156,10 +179,11 @@ func (a *app) waitDeployment(parent context.Context, c *client.Client, op domain
 			if current.Error != nil {
 				return d, current.Error
 			}
+			s.complete()
 			return d, nil
 		}
 		if d.State.InProgress() {
-			s.set(describe(d))
+			s.step(string(d.State), describe(d))
 		} else {
 			s.set(waitingFor(current.Kind))
 		}

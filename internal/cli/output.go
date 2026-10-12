@@ -13,9 +13,11 @@ import (
 
 // printer writes command results to stdout, either for people or as JSON.
 type printer struct {
-	w    io.Writer
-	json bool
-	now  func() time.Time
+	w     io.Writer
+	json  bool
+	now   func() time.Time
+	st    styles
+	width int
 }
 
 // result prints v as JSON in JSON mode, and otherwise calls human.
@@ -33,8 +35,13 @@ func printJSON(w io.Writer, v any) error {
 	return enc.Encode(v)
 }
 
-// table prints rows under a header with aligned columns.
+// table prints rows under a header with aligned columns. Cells may contain
+// styled text.
 func (p *printer) table(header []string, rows [][]string) {
+	if p.st.enabled {
+		fmt.Fprintln(p.w, richTable(p.st, header, rows, p.width))
+		return
+	}
 	tw := tabwriter.NewWriter(p.w, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(tw, strings.Join(header, "\t"))
 	for _, row := range rows {
@@ -55,6 +62,27 @@ func (p *printer) fields(pairs [][2]string) {
 }
 
 func (p *printer) line(format string, args ...any) { fmt.Fprintf(p.w, format+"\n", args...) }
+
+// success prints a line announcing that something worked.
+func (p *printer) success(format string, args ...any) {
+	fmt.Fprintln(p.w, p.st.ok("✓")+" "+fmt.Sprintf(format, args...))
+}
+
+// details prints one result: as a panel on a terminal, and otherwise as its
+// lines and label/value fields, without the title.
+func (p *printer) details(pn panel) {
+	if p.st.enabled {
+		fmt.Fprintln(p.w, pn.render(p.st, p.width))
+		return
+	}
+	for _, l := range pn.lines {
+		p.line("%s", l)
+	}
+	p.fields(pn.fields)
+	for _, n := range pn.notes {
+		p.line("\n%s", n)
+	}
+}
 
 // relative renders t relative to now: "in 3h", "5m ago".
 func relative(t, now time.Time) string {

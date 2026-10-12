@@ -8,8 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/filstawski/deployer/internal/client"
 	"github.com/filstawski/deployer/internal/domain"
 	"github.com/filstawski/deployer/internal/secretfile"
+	"github.com/filstawski/deployer/internal/sshtunnel"
 	"github.com/filstawski/deployer/internal/version"
 	"github.com/spf13/cobra"
 )
@@ -19,7 +21,7 @@ func (a *app) loginCommand() *cobra.Command {
 	var stdin bool
 	var apiPort int
 	cmd := &cobra.Command{
-		Use:   "login URL",
+		Use:   "login [URL]",
 		Short: "Connect to a Deployer server",
 		Long: `Connect to a Deployer server and save it as a context. You are prompted for
 an API token; an administrator creates one with deployer token create.
@@ -30,10 +32,13 @@ is not exposed publicly.`,
 		Example: `  deployer login https://api.example.com
   echo "$DEPLOYER_TOKEN" | deployer login https://api.example.com --token-stdin
   deployer login ssh://root@server.example.com`,
-		Args: exactArgs(1, "URL"),
+		Args: maxArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			url := strings.TrimRight(args[0], "/")
+			url, err := a.serverURLArg(args)
+			if err != nil {
+				return err
+			}
 			if name == "" {
 				name = defaultContextName(url)
 			}
@@ -68,7 +73,7 @@ is not exposed publicly.`,
 				return err
 			}
 			return a.out.result(map[string]any{"context": name, "url": url, "server": status}, func() {
-				a.out.line("✓ Logged in to %s as %s (context %q)", url, status.Token.Name, name)
+				a.out.success("Logged in to %s as %s (context %q)", a.out.st.url(url), a.out.st.bold(status.Token.Name), name)
 				a.out.line("  Previews are served at %s", strings.ReplaceAll(status.PreviewURL, "{name}", "NAME"))
 			})
 		},
@@ -77,6 +82,28 @@ is not exposed publicly.`,
 	cmd.Flags().BoolVar(&stdin, "token-stdin", false, "read the token from standard input")
 	cmd.Flags().IntVar(&apiPort, "api-port", 0, "server's loopback API port, for ssh:// URLs (default 7420)")
 	return cmd
+}
+
+// serverURLArg returns the server URL from the arguments, or asks for it.
+func (a *app) serverURLArg(args []string) (string, error) {
+	if len(args) == 1 {
+		return strings.TrimRight(args[0], "/"), nil
+	}
+	if !a.canPrompt() {
+		return "", usage("deployer login needs the server URL, such as https://api.example.com")
+	}
+	var url string
+	err := a.ask(Field{
+		Title: "Server", Description: "Your Deployer API, such as https://api.example.com", Value: &url,
+		Validate: func(v string) error {
+			if strings.HasPrefix(v, "ssh://") {
+				_, err := sshtunnel.Parse(v)
+				return err
+			}
+			return client.ValidateURL(strings.TrimRight(v, "/"), false)
+		},
+	})
+	return strings.TrimRight(url, "/"), err
 }
 
 func (a *app) readToken(stdin bool) (string, error) {
@@ -88,9 +115,17 @@ func (a *app) readToken(stdin bool) (string, error) {
 			return "", err
 		}
 		token = line
-	case a.env.Interactive && a.env.ReadSecret != nil:
-		var err error
-		if token, err = a.env.ReadSecret("API token: "); err != nil {
+	case a.canPrompt():
+		err := a.ask(Field{
+			Title: "API token", Description: "Create one on the server with: deployer token create laptop", Value: &token, Secret: true,
+			Validate: func(v string) error {
+				if !domain.ValidTokenSecret(v) {
+					return fmt.Errorf("tokens start with dpl_")
+				}
+				return nil
+			},
+		})
+		if err != nil {
 			return "", err
 		}
 	default:
@@ -136,7 +171,7 @@ func (a *app) logoutCommand() *cobra.Command {
 			}
 			os.Remove(ctx.TokenFile)
 			return a.out.result(map[string]string{"removed": name, "current": saved.Current}, func() {
-				a.out.line("✓ Logged out of %s", name)
+				a.out.success("Logged out of %s", name)
 				if saved.Current != "" {
 					a.out.line("  Current context is now %s", saved.Current)
 				}
@@ -166,7 +201,7 @@ func (a *app) contextCommand() *cobra.Command {
 				for _, name := range saved.names() {
 					current := ""
 					if name == saved.Current {
-						current = "*"
+						current = a.out.st.ok("*")
 					}
 					rows = append(rows, []string{current, name, saved.Contexts[name].URL})
 				}
@@ -190,7 +225,7 @@ func (a *app) contextCommand() *cobra.Command {
 			if err := a.env.saveContexts(saved); err != nil {
 				return err
 			}
-			return a.out.result(map[string]string{"current": args[0]}, func() { a.out.line("✓ Using %s", args[0]) })
+			return a.out.result(map[string]string{"current": args[0]}, func() { a.out.success("Using %s", args[0]) })
 		},
 	}
 	cmd.AddCommand(list, use)
@@ -212,22 +247,36 @@ func (a *app) statusCommand() *cobra.Command {
 				return err
 			}
 			return a.out.result(s, func() {
-				github := "not connected (deployer github setup)"
+				st := a.out.st
+				github := st.warn("not connected") + st.muted(" · deployer github setup")
 				if s.GitHub {
-					github = "connected"
+					github = st.ok("connected")
 				}
-				a.out.fields([][2]string{
-					{"Server", c.BaseURL()}, {"Using", a.conn.Source},
-					{"Version", fmt.Sprintf("%s (CLI %s)", s.Version, version.Version)},
-					{"Previews", strings.ReplaceAll(s.PreviewURL, "{name}", "NAME")},
-					{"Deployments", fmt.Sprintf("%d of %d", s.Deployments.Live, s.Deployments.Max)},
-					{"Lifetime", fmt.Sprintf("%s by default, up to %s", domain.FormatDuration(time.Duration(s.Deployments.DefaultTTL)*time.Second), domain.FormatDuration(time.Duration(s.Deployments.MaxTTL)*time.Second))},
-					{"GitHub", github},
-					{"Token", tokenSummary(s.Token, a.out)},
-				})
+				versions := s.Version + st.muted(" · CLI "+version.Version)
 				if s.Version != version.Version {
-					a.out.line("\nThe CLI and server versions differ. Upgrade the older one with: deployer upgrade")
+					versions = st.warn(s.Version) + st.muted(" · CLI ") + st.warn(version.Version)
 				}
+				p := panel{
+					title: "Deployer · " + s.Domain, accent: colorAccent,
+					lines: []string{st.url(c.BaseURL())},
+					fields: [][2]string{
+						{"Using", a.conn.Source},
+						{"Version", versions},
+						{"Previews", strings.ReplaceAll(s.PreviewURL, "{name}", "NAME")},
+						{"Deployments", fmt.Sprintf("%s of %d", st.bold(fmt.Sprint(s.Deployments.Live)), s.Deployments.Max)},
+						{"Lifetime", fmt.Sprintf("%s by default, up to %s", domain.FormatDuration(time.Duration(s.Deployments.DefaultTTL)*time.Second), domain.FormatDuration(time.Duration(s.Deployments.MaxTTL)*time.Second))},
+						{"GitHub", github},
+						{"Token", tokenSummary(s.Token, a.out)},
+					},
+				}
+				if !st.enabled {
+					p.lines = nil
+					p.fields = append([][2]string{{"Server", c.BaseURL()}}, p.fields...)
+				}
+				if s.Version != version.Version {
+					p.notes = []string{"The CLI and server versions differ. Upgrade the older one with: " + st.command("deployer upgrade")}
+				}
+				a.out.details(p)
 			})
 		},
 	}

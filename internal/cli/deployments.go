@@ -1,10 +1,9 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"fmt"
-	"strings"
+	"slices"
 	"time"
 
 	"github.com/filstawski/deployer/internal/client"
@@ -31,14 +30,28 @@ func (a *app) listCommand() *cobra.Command {
 			}
 			return a.out.result(list, func() {
 				if len(list) == 0 {
-					a.out.line("No deployments. Create one with: deployer deploy")
+					a.out.line("No deployments. Create one with: %s", a.out.st.command("deployer deploy"))
 					return
+				}
+				st := a.out.st
+				// At a terminal, the project column is left out when every
+				// deployment belongs to the same project, to save width.
+				withProject := !st.enabled
+				for _, d := range list {
+					withProject = withProject || d.Project != list[0].Project
+				}
+				header := []string{"NAME", "PROJECT", "REF", "STATE", "EXPIRES", "URL"}
+				if !withProject {
+					header = slices.Delete(header, 1, 2)
 				}
 				rows := make([][]string, len(list))
 				for i, d := range list {
-					rows[i] = []string{d.Name, d.Project, d.Ref, string(d.State), a.out.shortWhen(d.ExpiresAt), d.URL}
+					rows[i] = []string{st.bold(d.Name), d.Project, d.Ref, st.state(d.State), st.muted(a.out.shortWhen(d.ExpiresAt)), st.url(d.URL)}
+					if !withProject {
+						rows[i] = slices.Delete(rows[i], 1, 2)
+					}
 				}
-				a.out.table([]string{"NAME", "PROJECT", "REF", "STATE", "EXPIRES", "URL"}, rows)
+				a.out.table(header, rows)
 			})
 		},
 	}
@@ -47,18 +60,28 @@ func (a *app) listCommand() *cobra.Command {
 	return cmd
 }
 
+// live keeps deployments that still exist.
+func live(d domain.Deployment) bool { return d.State.Live() }
+
 func (a *app) inspectCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:     "inspect NAME",
+		Use:     "inspect [NAME]",
 		Aliases: []string{"show"},
 		Short:   "Show a deployment's details",
-		Args:    exactArgs(1, "NAME"),
+		Args:    maxArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := a.needsName(args, "inspect"); err != nil {
+				return err
+			}
 			c, err := a.client(cmd.Context())
 			if err != nil {
 				return err
 			}
-			d, err := c.Deployment(cmd.Context(), args[0])
+			ref, err := a.deploymentArg(cmd.Context(), c, args, "inspect", nil)
+			if err != nil {
+				return err
+			}
+			d, err := c.Deployment(cmd.Context(), ref)
 			if err != nil {
 				return err
 			}
@@ -68,48 +91,79 @@ func (a *app) inspectCommand() *cobra.Command {
 }
 
 func (a *app) printDeployment(d domain.Deployment) {
-	pairs := [][2]string{
-		{"Name", d.Name}, {"ID", d.ID}, {"Project", d.Project}, {"URL", d.URL},
-		{"State", string(d.State)}, {"Ref", refAt(d)},
-		{"Created", a.out.when(&d.CreatedAt)}, {"Ready", a.out.when(d.ReadyAt)},
-		{"Expires", a.out.when(d.ExpiresAt)}, {"Removed", a.out.when(d.PurgeAt)},
-		{"Error", errorText(d.Error)},
-	}
+	st := a.out.st
+	lifetime := ""
 	if d.ExpiresAt == nil && d.State.InProgress() {
-		pairs = append(pairs, [2]string{"Lifetime", domain.FormatDuration(d.TTL()) + " once ready"})
+		lifetime = domain.FormatDuration(d.TTL()) + " once ready"
 	}
-	a.out.fields(pairs)
-	if d.Error != nil && d.Error.Hint != "" {
-		a.out.line("\n%s", d.Error.Hint)
+	if !st.enabled {
+		a.out.fields([][2]string{
+			{"Name", d.Name}, {"ID", d.ID}, {"Project", d.Project}, {"URL", d.URL},
+			{"State", string(d.State)}, {"Ref", refAt(d)},
+			{"Created", a.out.when(&d.CreatedAt)}, {"Ready", a.out.when(d.ReadyAt)},
+			{"Expires", a.out.when(d.ExpiresAt)}, {"Removed", a.out.when(d.PurgeAt)},
+			{"Lifetime", lifetime}, {"Error", errorText(d.Error)},
+		})
+		if d.Error != nil && d.Error.Hint != "" {
+			a.out.line("\n%s", d.Error.Hint)
+		}
+		return
 	}
+	p := panel{
+		title: d.Name + "  " + st.state(d.State), accent: stateColor(d.State),
+		lines: []string{st.url(d.URL)},
+		fields: [][2]string{
+			{"Ref", d.Ref + st.muted(" @ "+shortCommit(d.Commit))}, {"Project", d.Project},
+			{"Created", a.out.when(&d.CreatedAt)}, {"Ready", a.out.when(d.ReadyAt)},
+			{"Expires", st.bold(a.out.when(d.ExpiresAt))}, {"Lifetime", lifetime},
+			{"Removed", st.muted(a.out.when(d.PurgeAt))}, {"ID", st.muted(d.ID)},
+		},
+	}
+	if d.Commit == "" {
+		p.fields[0][1] = d.Ref
+	}
+	if d.Error != nil {
+		p.notes = append(p.notes, st.bad("✗ "+d.Error.Message)+st.muted(" ("+string(d.Error.Code)+")"))
+		if d.Error.Hint != "" {
+			p.notes = append(p.notes, st.muted("→ ")+d.Error.Hint)
+		}
+	}
+	a.out.details(p)
 }
 
 func (a *app) logsCommand() *cobra.Command {
 	var build, follow bool
 	var lines int
 	cmd := &cobra.Command{
-		Use:   "logs NAME",
+		Use:   "logs [NAME]",
 		Short: "Show a deployment's app or build output",
 		Example: `  deployer logs design-a
   deployer logs design-a --build --follow`,
-		Args: exactArgs(1, "NAME"),
+		Args: maxArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if follow && !build {
 				return usage("--follow works with --build")
 			}
 			ctx := cmd.Context()
+			if err := a.needsName(args, "logs"); err != nil {
+				return err
+			}
 			c, err := a.client(ctx)
 			if err != nil {
 				return err
 			}
+			ref, err := a.deploymentArg(ctx, c, args, "see logs of", live)
+			if err != nil {
+				return err
+			}
 			if !follow {
-				logs, err := c.Logs(ctx, args[0], client.LogsOptions{Build: build, Lines: lines})
+				logs, err := c.Logs(ctx, ref, client.LogsOptions{Build: build, Lines: lines})
 				if err != nil {
 					return err
 				}
-				return a.out.result(logs, func() { fmt.Fprint(a.env.Stdout, logs.Logs) })
+				return a.out.result(logs, func() { fmt.Fprint(a.out.w, logs.Logs) })
 			}
-			return a.followBuild(ctx, c, args[0])
+			return a.followBuild(ctx, c, ref)
 		},
 	}
 	cmd.Flags().BoolVar(&build, "build", false, "show the build log instead of the app's output")
@@ -125,7 +179,7 @@ func (a *app) followBuild(ctx context.Context, c *client.Client, ref string) err
 		if err != nil && domain.CodeOf(err) != domain.CodeNotFound {
 			return err
 		}
-		fmt.Fprint(a.env.Stdout, logs.Logs)
+		fmt.Fprint(a.out.w, logs.Logs)
 		if logs.Offset > 0 {
 			offset = logs.Offset
 		}
@@ -146,50 +200,74 @@ func (a *app) followBuild(ctx context.Context, c *client.Client, ref string) err
 
 func (a *app) openCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "open NAME",
+		Use:   "open [NAME]",
 		Short: "Open a deployment in the browser",
-		Args:  exactArgs(1, "NAME"),
+		Args:  maxArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := a.needsName(args, "open"); err != nil {
+				return err
+			}
 			c, err := a.client(cmd.Context())
 			if err != nil {
 				return err
 			}
-			d, err := c.Deployment(cmd.Context(), args[0])
+			ref, err := a.deploymentArg(cmd.Context(), c, args, "open", live)
+			if err != nil {
+				return err
+			}
+			d, err := c.Deployment(cmd.Context(), ref)
 			if err != nil {
 				return err
 			}
 			if a.env.OpenBrowser != nil && a.env.Interactive && !a.json {
 				if err := a.env.OpenBrowser(d.URL); err != nil {
-					a.progress("Could not open a browser: %v", err)
+					a.warn("could not open a browser: %v", err)
 				}
 			}
-			return a.out.result(map[string]string{"url": d.URL}, func() { a.out.line("%s", d.URL) })
+			return a.out.result(map[string]string{"url": d.URL}, func() { a.out.line("%s", a.out.st.url(d.URL)) })
 		},
 	}
 }
 
-// lifecycleCommand builds stop, start, and destroy, which queue an operation
-// and wait for it by default.
-func (a *app) lifecycleCommand(use, short, long, done string, submit func(c *client.Client, ctx context.Context, ref, key string) (domain.Operation, error), confirm bool) *cobra.Command {
+// lifecycle describes stop, start, or destroy, which queue an operation and
+// wait for it by default.
+type lifecycle struct {
+	use, short, long string
+	verb, done       string
+	submit           func(c *client.Client, ctx context.Context, ref, key string) (domain.Operation, error)
+	// keep selects the deployments offered when no name is given.
+	keep func(domain.Deployment) bool
+	// confirm asks before going ahead.
+	confirm bool
+}
+
+func (a *app) lifecycleCommand(l lifecycle) *cobra.Command {
 	var detach, yes bool
 	var timeout time.Duration
 	cmd := &cobra.Command{
-		Use:   use + " NAME",
-		Short: short,
-		Long:  long,
-		Args:  exactArgs(1, "NAME"),
+		Use:   l.use + " [NAME]",
+		Short: l.short,
+		Long:  l.long,
+		Args:  maxArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
+			if err := a.needsName(args, l.use); err != nil {
+				return err
+			}
 			c, err := a.client(ctx)
 			if err != nil {
 				return err
 			}
-			if confirm && !yes {
-				if err := a.confirm(ctx, c, args[0]); err != nil {
+			ref, err := a.deploymentArg(ctx, c, args, l.verb, l.keep)
+			if err != nil {
+				return err
+			}
+			if l.confirm && !yes {
+				if err := a.confirmDestroy(ctx, c, ref); err != nil {
 					return err
 				}
 			}
-			op, err := submit(c, ctx, args[0], "cli-"+domain.RandomString(16))
+			op, err := l.submit(c, ctx, ref, "cli-"+domain.RandomString(16))
 			if err != nil {
 				return err
 			}
@@ -200,87 +278,131 @@ func (a *app) lifecycleCommand(use, short, long, done string, submit func(c *cli
 			if err != nil {
 				return err
 			}
-			return a.out.result(d, func() { a.out.line("✓ %s %s", d.Name, done) })
+			return a.out.result(d, func() { a.out.success("%s %s", a.out.st.bold(d.Name), l.done) })
 		},
 	}
 	cmd.Flags().BoolVarP(&detach, "detach", "d", false, "return once the operation is queued")
 	cmd.Flags().DurationVar(&timeout, "timeout", 10*time.Minute, "how long to wait")
-	if confirm {
+	if l.confirm {
 		cmd.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask for confirmation")
 	}
 	return cmd
 }
 
 func (a *app) stopCommand() *cobra.Command {
-	return a.lifecycleCommand("stop", "Stop a running deployment",
-		"Stop a deployment's container. Visitors see an offline page. Its lifetime keeps running; start it again with deployer start.",
-		"stopped", (*client.Client).Stop, false)
+	return a.lifecycleCommand(lifecycle{
+		use: "stop", short: "Stop a running deployment", verb: "stop", done: "stopped",
+		long:   "Stop a deployment's container. Visitors see an offline page. Its lifetime keeps running; start it again with deployer start.",
+		submit: (*client.Client).Stop,
+		keep:   func(d domain.Deployment) bool { return d.State == domain.StateRunning },
+	})
 }
 
 func (a *app) startCommand() *cobra.Command {
-	return a.lifecycleCommand("start", "Start a stopped or failed deployment",
-		"Start a deployment again from its built image, without rebuilding. An expired deployment must be extended first.",
-		"is running", (*client.Client).Start, false)
+	return a.lifecycleCommand(lifecycle{
+		use: "start", short: "Start a stopped or failed deployment", verb: "start", done: "is running",
+		long:   "Start a deployment again from its built image, without rebuilding. An expired deployment must be extended first.",
+		submit: (*client.Client).Start,
+		keep: func(d domain.Deployment) bool {
+			return (d.State == domain.StateStopped || d.State == domain.StateFailed) && d.Image != "" && !d.ExpiredAt(time.Now())
+		},
+	})
 }
 
 func (a *app) destroyCommand() *cobra.Command {
-	cmd := a.lifecycleCommand("destroy", "Remove a deployment and its resources",
-		"Remove a deployment's container, network, image, and logs, and release its name. This cancels a build in progress.",
-		"was destroyed", (*client.Client).Destroy, true)
+	cmd := a.lifecycleCommand(lifecycle{
+		use: "destroy", short: "Remove a deployment and its resources", verb: "destroy", done: "was destroyed",
+		long:    "Remove a deployment's container, network, image, and logs, and release its name. This cancels a build in progress.",
+		submit:  (*client.Client).Destroy,
+		keep:    live,
+		confirm: true,
+	})
 	cmd.Aliases = []string{"rm"}
 	return cmd
 }
 
-// confirm asks before destroying. Without a terminal, --yes is required.
-func (a *app) confirm(ctx context.Context, c *client.Client, ref string) error {
-	if !a.env.Interactive {
-		return usage("destroying requires confirmation; pass --yes")
+// confirmDestroy asks before destroying. Without a terminal, --yes is
+// required.
+func (a *app) confirmDestroy(ctx context.Context, c *client.Client, ref string) error {
+	if !a.canPrompt() {
+		return usage("destroying needs confirmation; pass --yes")
 	}
 	d, err := c.Deployment(ctx, ref)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(a.env.Stderr, "Destroy %s (%s)? [y/N] ", d.Name, d.URL)
-	answer, _ := bufio.NewReader(a.env.Stdin).ReadString('\n')
-	if a := strings.ToLower(strings.TrimSpace(answer)); a != "y" && a != "yes" {
-		return domain.Errorf(domain.CodeClient, "cancelled")
+	ok, err := a.confirmPrompt("Destroy "+d.Name+"?", d.URL+" and everything in it will be removed. This can't be undone.")
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return domain.Errorf(domain.CodeClient, "cancelled; %s was not destroyed", d.Name)
 	}
 	return nil
 }
 
+// durations are the lifetimes offered in prompts.
+var durations = []struct {
+	label string
+	d     time.Duration
+}{{"1 hour", time.Hour}, {"4 hours", 4 * time.Hour}, {"1 day", 24 * time.Hour}, {"3 days", 72 * time.Hour}, {"1 week", 168 * time.Hour}}
+
 func (a *app) extendCommand() *cobra.Command {
 	var by string
 	cmd := &cobra.Command{
-		Use:   "extend NAME --by DURATION",
+		Use:   "extend [NAME] [--by DURATION]",
 		Short: "Lengthen a deployment's lifetime",
 		Long: `Lengthen a deployment's lifetime. An expired deployment that has not been
 removed yet gets a new lifetime starting now; start it again with deployer start.`,
 		Example: "  deployer extend design-a --by 2d",
-		Args:    exactArgs(1, "NAME"),
+		Args:    maxArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if by == "" {
+			ctx := cmd.Context()
+			if by == "" && !a.canPrompt() {
 				return usage("--by is required, such as --by 1d")
 			}
-			dur, err := domain.ParseDuration(by)
-			if err != nil {
-				return usage("--by: %v", err)
+			var dur time.Duration
+			if by != "" {
+				var err error
+				if dur, err = domain.ParseDuration(by); err != nil {
+					return usage("--by: %v", err)
+				}
 			}
-			c, err := a.client(cmd.Context())
+			if err := a.needsName(args, "extend"); err != nil {
+				return err
+			}
+			c, err := a.client(ctx)
 			if err != nil {
 				return err
 			}
-			d, err := c.Extend(cmd.Context(), args[0], dur)
+			ref, err := a.deploymentArg(ctx, c, args, "extend", live)
+			if err != nil {
+				return err
+			}
+			if by == "" {
+				options := make([]Option, len(durations))
+				for n, o := range durations {
+					options[n] = Option{Label: o.label, Value: o.d.String()}
+				}
+				choice := (24 * time.Hour).String()
+				if err := a.ask(Field{Title: "Extend " + ref + " by how long?", Options: options, Value: &choice}); err != nil {
+					return err
+				}
+				dur, _ = time.ParseDuration(choice)
+			}
+			d, err := c.Extend(ctx, ref, dur)
 			if err != nil {
 				return err
 			}
 			return a.out.result(d, func() {
+				st := a.out.st
 				if d.ExpiresAt == nil {
-					a.out.line("✓ %s will run for %s once ready", d.Name, domain.FormatDuration(d.TTL()))
+					a.out.success("%s will run for %s once ready", st.bold(d.Name), domain.FormatDuration(d.TTL()))
 					return
 				}
-				a.out.line("✓ %s now expires %s", d.Name, a.out.when(d.ExpiresAt))
+				a.out.success("%s now expires %s", st.bold(d.Name), st.bold(a.out.when(d.ExpiresAt)))
 				if d.State == domain.StateStopped {
-					a.out.line("Start it again with: deployer start %s", d.Name)
+					a.out.line("  Start it again with: %s", st.command("deployer start "+d.Name))
 				}
 			})
 		},
@@ -330,9 +452,34 @@ func (a *app) operationCommand() *cobra.Command {
 }
 
 func (a *app) printOperation(op domain.Operation) {
-	a.out.fields([][2]string{
-		{"Operation", op.ID}, {"Kind", string(op.Kind)}, {"Status", string(op.Status)},
-		{"Deployment", op.DeploymentID}, {"Started", a.out.when(op.StartedAt)}, {"Finished", a.out.when(op.FinishedAt)},
-		{"Error", errorText(op.Error)},
-	})
+	st := a.out.st
+	status := string(op.Status)
+	accent := colorBusy
+	switch op.Status {
+	case domain.OpSucceeded:
+		status, accent = st.ok("✓ "+status), colorOK
+	case domain.OpFailed, domain.OpCancelled:
+		status, accent = st.bad("✗ "+status), colorBad
+	default:
+		status = st.warn("◐ " + status)
+	}
+	p := panel{
+		title: op.ID, accent: accent,
+		fields: [][2]string{
+			{"Operation", op.ID}, {"Kind", string(op.Kind)}, {"Status", status},
+			{"Deployment", op.DeploymentID}, {"Started", a.out.when(op.StartedAt)}, {"Finished", a.out.when(op.FinishedAt)},
+			{"Error", errorText(op.Error)},
+		},
+	}
+	if st.enabled {
+		p.fields = p.fields[1:]
+		if op.Error != nil {
+			p.fields = p.fields[:len(p.fields)-1]
+			p.notes = []string{st.bad("✗ " + op.Error.Message)}
+			if op.Error.Hint != "" {
+				p.notes = append(p.notes, st.muted("→ ")+op.Error.Hint)
+			}
+		}
+	}
+	a.out.details(p)
 }

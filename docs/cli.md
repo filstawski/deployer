@@ -3,6 +3,7 @@
 `deployer` manages previews on a Deployer server. Every command has `--help`
 with examples. This page describes the concepts that span commands.
 
+- [Interactive use](#interactive-use)
 - [Connecting](#connecting)
 - [Deploying](#deploying)
 - [Managing deployments](#managing-deployments)
@@ -11,6 +12,28 @@ with examples. This page describes the concepts that span commands.
 - [Output, exit codes, and scripting](#output-exit-codes-and-scripting)
 - [Upgrading](#upgrading)
 - [Server administration](#server-administration)
+
+## Interactive use
+
+At a terminal, the CLI asks for what you leave out instead of failing:
+
+| Command | Asks for |
+| --- | --- |
+| `deployer deploy` | A short form with the branch, name, and lifetime, filled in with suggestions: the current branch, a readable unused name, and the server's default lifetime. Press Enter to accept them. |
+| `inspect`, `logs`, `open`, `stop`, `start`, `extend`, `destroy` | The deployment, picked from a list, when you give no name. `stop` only offers running ones, `start` stopped or failed ones. |
+| `deployer extend` | How long, when `--by` is missing. |
+| `deployer destroy` | Confirmation, unless you pass `--yes`. |
+| `deployer login` | The server URL and the token. |
+| `deployer init` | The port and health check path, pre-filled from the Dockerfile. |
+
+Flags answer questions in advance, so `deployer deploy --ref main` only asks
+for the name and lifetime, and `deployer deploy -y` asks nothing. Without a
+terminal, in scripts, CI, and with `--json`, the CLI never prompts; it uses
+defaults or reports what is missing, as described below.
+
+Output is styled at a terminal: results appear in panels, and states, URLs,
+and errors are colored. Piped or redirected output is plain text. Set
+`NO_COLOR=1` to turn colors off.
 
 ## Connecting
 
@@ -73,6 +96,7 @@ so the CLI warns when you have unpushed commits or uncommitted changes.
 | Flag | Meaning |
 | --- | --- |
 | `-r, --ref` | Branch or full commit SHA. Default: the current branch. |
+| `-y, --yes` | Skip the form at a terminal and use the defaults. |
 | `-n, --name` | Preview name; the URL becomes `https://NAME.previews.example.com`. Default: generated from the project and branch, such as `shop-design-a-k7m2q`. |
 | `--ttl` | Lifetime after the preview becomes ready, such as `4h` or `3d`. Default and maximum are server settings; see `deployer status`. |
 | `-f, --follow` | Print the build output while waiting. |
@@ -106,7 +130,8 @@ deployer logs design-a            # the app's output (last 200 lines; -n for mor
 deployer logs design-a --build -f # follow a build in progress
 ```
 
-Commands accept a deployment's name or its ID (`dep_...`).
+Commands accept a deployment's name or its ID (`dep_...`). At a terminal, leave
+the name out to pick from a list.
 
 | Command | Effect |
 | --- | --- |

@@ -131,11 +131,11 @@ func (a *app) printInstall(res install.Result) error {
 				a.out.line("  • %s", s)
 			}
 		case "installed":
-			a.out.line("✓ Deployer %s is installed", res.Version)
+			a.out.success("Deployer %s is installed", res.Version)
 		case "upgraded":
-			a.out.line("✓ Upgraded to Deployer %s", res.Version)
+			a.out.success("Upgraded to Deployer %s", res.Version)
 		case "uninstalled":
-			a.out.line("✓ Deployer was removed")
+			a.out.success("Deployer was removed")
 		}
 		if res.Status != "planned" && res.Previews != "" {
 			a.out.fields([][2]string{{"  Previews", res.Previews}, {"  API", res.API}})

@@ -5,10 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os/exec"
 	"runtime"
 	"strings"
 
+	"github.com/charmbracelet/colorprofile"
 	"github.com/filstawski/deployer/internal/client"
 	"github.com/filstawski/deployer/internal/domain"
 	"github.com/spf13/cobra"
@@ -34,11 +36,19 @@ type app struct {
 	conn        connection
 	cleanup     []func()
 	out         *printer
+	// stderr carries progress, warnings, and errors; errs styles them.
+	stderr io.Writer
+	errs   styles
 }
 
 // Run executes the CLI and returns its exit code.
 func Run(ctx context.Context, env Env, args []string) int {
 	a := &app{env: env}
+	// The writers strip colors where the output is not a color terminal, or
+	// NO_COLOR is set.
+	stdout := colorprofile.NewWriter(env.Stdout, env.Environ)
+	a.stderr = colorprofile.NewWriter(env.Stderr, env.Environ)
+	a.out = &printer{w: stdout, now: env.Now}
 	defer func() {
 		for _, fn := range a.cleanup {
 			fn()
@@ -95,7 +105,10 @@ Get started:
 		SilenceErrors:     true,
 		CompletionOptions: cobra.CompletionOptions{HiddenDefaultCmd: true},
 		PersistentPreRun: func(cmd *cobra.Command, _ []string) {
-			a.out = &printer{w: a.env.Stdout, json: a.json, now: a.env.Now}
+			a.out.json = a.json
+			a.out.width = a.env.Width
+			a.out.st = styles{enabled: a.env.Terminal && !a.json, links: a.env.supportsLinks()}
+			a.errs = styles{enabled: a.env.Interactive && !a.json}
 		},
 	}
 	root.PersistentFlags().BoolVar(&a.json, "json", false, "print machine-readable JSON to stdout")
@@ -137,12 +150,19 @@ func (a *app) fail(err error) int {
 			e = &domain.Error{Code: domain.CodeClient, Message: err.Error()}
 		}
 	}
-	if a.json {
-		printJSON(a.env.Stdout, map[string]any{"error": e})
-	} else {
-		fmt.Fprintf(a.env.Stderr, "Error: %s\n", e.Message)
+	switch {
+	case a.json:
+		printJSON(a.out.w, map[string]any{"error": e})
+	case a.errs.enabled:
+		p := panel{title: a.errs.bad("✗ ") + "Error", accent: colorBad, lines: []string{e.Message}}
 		if e.Hint != "" {
-			fmt.Fprintf(a.env.Stderr, "Hint:  %s\n", e.Hint)
+			p.notes = []string{a.errs.muted("Hint: ") + e.Hint}
+		}
+		fmt.Fprintln(a.stderr, p.render(a.errs, a.env.Width))
+	default:
+		fmt.Fprintf(a.stderr, "Error: %s\n", e.Message)
+		if e.Hint != "" {
+			fmt.Fprintf(a.stderr, "Hint:  %s\n", e.Hint)
 		}
 	}
 	switch e.Code {
@@ -173,8 +193,18 @@ func usage(format string, args ...any) *domain.Error {
 // progress prints a status line to stderr unless output is quiet.
 func (a *app) progress(format string, args ...any) {
 	if !a.quiet {
-		fmt.Fprintf(a.env.Stderr, format+"\n", args...)
+		fmt.Fprintf(a.stderr, format+"\n", args...)
 	}
+}
+
+// warn prints a warning to stderr unless output is quiet.
+func (a *app) warn(format string, args ...any) {
+	a.progress("%s %s", a.errs.warn("▲ Warning:"), fmt.Sprintf(format, args...))
+}
+
+// done prints a completed step to stderr unless output is quiet.
+func (a *app) done(format string, args ...any) {
+	a.progress("%s %s", a.errs.ok("✓"), fmt.Sprintf(format, args...))
 }
 
 func openBrowser(url string) error {

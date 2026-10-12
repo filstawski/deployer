@@ -42,6 +42,22 @@ func detectRepo(ctx context.Context, dir string) (*localRepo, error) {
 	return r, nil
 }
 
+// remoteBranches returns the branches pushed to origin, most recently
+// changed first, as far as the last fetch knows.
+func (r *localRepo) remoteBranches(ctx context.Context) []string {
+	out, err := execx.Run(ctx, execx.Cmd{Name: "git", Args: []string{"-C", r.Root, "for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", "refs/remotes/origin"}})
+	if err != nil {
+		return nil
+	}
+	var branches []string
+	for _, line := range strings.Fields(out) {
+		if b, ok := strings.CutPrefix(line, "origin/"); ok && b != "HEAD" {
+			branches = append(branches, b)
+		}
+	}
+	return branches
+}
+
 // repoName returns the last path element of a repository URL without .git.
 func repoName(repository string) string {
 	return strings.TrimSuffix(path.Base(repository), ".git")

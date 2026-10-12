@@ -100,7 +100,7 @@ func (a *app) upgradeClient(ctx context.Context, rel *release.Client, current, t
 		return domain.Errorf(domain.CodeUnavailable, "%v", err)
 	}
 	return a.out.result(map[string]string{"previous": current, "version": target, "path": exe}, func() {
-		a.out.line("✓ Upgraded deployer from %s to %s", current, target)
+		a.out.success("Upgraded deployer from %s to %s", current, target)
 	})
 }
 

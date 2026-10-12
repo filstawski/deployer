@@ -99,11 +99,11 @@ The server's API must be reachable at --public-url over HTTPS for the callback.`
 				a.out.line("")
 				rows := make([][]string, len(s.Installations))
 				for i, in := range s.Installations {
-					state := "active"
+					state := a.out.st.ok("active")
 					if in.Suspended {
-						state = "suspended"
+						state = a.out.st.warn("suspended")
 					}
-					rows[i] = []string{in.Account, strings.ReplaceAll(in.Selection, "_", " "), state}
+					rows[i] = []string{a.out.st.bold(in.Account), strings.ReplaceAll(in.Selection, "_", " "), state}
 				}
 				a.out.table([]string{"ACCOUNT", "REPOSITORIES", "STATE"}, rows)
 			})
