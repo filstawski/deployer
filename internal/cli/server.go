@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/filstawski/deployer/internal/install"
+	"github.com/filstawski/deployer/internal/release"
 	"github.com/filstawski/deployer/internal/version"
 	"github.com/spf13/cobra"
 )
@@ -58,17 +59,29 @@ verifies a release first.`
 	f.BoolVar(&o.DryRun, "dry-run", false, "show what would be done without changing anything")
 
 	var u install.UpgradeOptions
+	var target string
 	upgrade := &cobra.Command{
 		Use:   "upgrade",
-		Short: "Upgrade this server to this CLI's release",
-		Long: `Upgrade the installed server to the release of this deployer binary. The
+		Short: "Upgrade this server to the latest release",
+		Long: `Upgrade the installed server to the latest release, or to --version. The
 database is backed up first, and the previous release is restored if the new
-one does not start. Previews keep running unless their containers must change.`,
+one does not start. Preview containers keep running.
+
+With --bundle, install the release binaries in that directory instead of
+downloading them.`,
 		Args: exactArgs(0),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			u.Version = version.Version
 			if u.Bundle == "" {
-				u.Bundle = executableDir()
+				rel := release.New(a.env.ReleaseURL)
+				v, err := a.targetVersion(cmd.Context(), rel, target)
+				if err != nil {
+					return err
+				}
+				if !u.DryRun {
+					return a.upgradeServer(cmd.Context(), rel, v)
+				}
+				u.Version = v // Plan the upgrade to the release that would be downloaded.
 			}
 			res, err := install.New(a.env.Stderr).Upgrade(cmd.Context(), u)
 			if err != nil {
@@ -77,7 +90,8 @@ one does not start. Previews keep running unless their containers must change.`,
 			return a.printInstall(res)
 		},
 	}
-	upgrade.Flags().StringVar(&u.Bundle, "bundle", "", "directory with the release binaries (default: this executable's directory)")
+	upgrade.Flags().StringVar(&target, "version", "", "release to upgrade to (default: the latest)")
+	upgrade.Flags().StringVar(&u.Bundle, "bundle", "", "directory with release binaries to install instead of downloading")
 	upgrade.Flags().BoolVar(&u.DryRun, "dry-run", false, "show what would be done without changing anything")
 
 	var un install.UninstallOptions

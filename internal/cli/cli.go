@@ -53,6 +53,10 @@ func Run(ctx context.Context, env Env, args []string) int {
 	if err == nil {
 		return ExitOK
 	}
+	var code exitCode
+	if errors.As(err, &code) {
+		return int(code)
+	}
 	if _, ok := domain.AsError(err); !ok && strings.HasPrefix(err.Error(), "unknown command") {
 		err = usage("%s", strings.TrimSpace(err.Error())).WithHint("see: deployer --help")
 	}
@@ -118,7 +122,7 @@ Get started:
 	add("project", a.projectCommand(), a.initCommand(), a.validateCommand())
 	add("access", a.loginCommand(), a.logoutCommand(), a.contextCommand(), a.statusCommand(), a.tokenCommand(), a.githubCommand())
 	add("server", a.serverCommand())
-	root.AddCommand(a.versionCommand())
+	root.AddCommand(a.upgradeCommand(), a.versionCommand())
 	return root
 }
 
@@ -154,6 +158,12 @@ func (a *app) fail(err error) int {
 		return ExitError
 	}
 }
+
+// exitCode ends the CLI with a status without printing anything, for
+// commands that delegated to another process, which reported already.
+type exitCode int
+
+func (e exitCode) Error() string { return fmt.Sprintf("exit status %d", int(e)) }
 
 // usage returns an INVALID_INPUT error for command-line mistakes.
 func usage(format string, args ...any) *domain.Error {

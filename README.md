@@ -93,6 +93,7 @@ Private GitHub repositories need a one-time [GitHub connection](docs/github.md).
 | `deployer stop NAME` / `start NAME` | Take a preview offline and bring it back |
 | `deployer extend NAME --by 2d` | Keep a preview longer |
 | `deployer destroy NAME` | Remove a preview now |
+| `deployer upgrade` | Upgrade the CLI, or the whole server when run on it |
 
 Every command accepts `--json`. Run `deployer --help` for the full list, or see
 the [CLI reference](docs/cli.md).

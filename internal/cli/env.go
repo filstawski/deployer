@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/filstawski/deployer/internal/install"
 	"golang.org/x/term"
 )
 
@@ -32,6 +33,15 @@ type Env struct {
 	// WorkDir is the directory for Git detection and local files.
 	WorkDir string
 	Now     func() time.Time
+	// Executable is the resolved path of this deployer binary.
+	Executable string
+	// Root reports whether the process runs as root.
+	Root bool
+	// ReleaseURL overrides where releases are downloaded from.
+	ReleaseURL string
+	// ServerReleases is where a server installation keeps its releases; a
+	// deployer binary inside it is part of that installation.
+	ServerReleases string
 }
 
 // ProcessEnv returns the Env of the current process.
@@ -54,6 +64,15 @@ func ProcessEnv() Env {
 	if runtime.GOOS == "linux" && os.Geteuid() == 0 {
 		env.ServerConfig = "/etc/deployer/server.yaml"
 	}
+	env.Root = os.Geteuid() == 0
+	if exe, err := os.Executable(); err == nil {
+		if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+			exe = resolved
+		}
+		env.Executable = exe
+	}
+	env.ReleaseURL = os.Getenv("DEPLOYER_RELEASE_URL")
+	env.ServerReleases = install.ReleasesDir
 	env.ReadSecret = func(prompt string) (string, error) {
 		io.WriteString(os.Stderr, prompt)
 		b, err := term.ReadPassword(int(os.Stdin.Fd()))

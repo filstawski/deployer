@@ -225,6 +225,9 @@ func (a *app) statusCommand() *cobra.Command {
 					{"GitHub", github},
 					{"Token", tokenSummary(s.Token, a.out)},
 				})
+				if s.Version != version.Version {
+					a.out.line("\nThe CLI and server versions differ. Upgrade the older one with: deployer upgrade")
+				}
 			})
 		},
 	}

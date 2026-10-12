@@ -168,19 +168,31 @@ repositories, [connect GitHub](github.md).
 
 ## Upgrading
 
-Upgrade the server as root:
+On the server, as root:
 
 ```sh
-curl -fsSL https://github.com/filstawski/deployer/releases/latest/download/install.sh | sh -s -- upgrade
+deployer upgrade
 ```
 
-The upgrade stops the service, backs up the database to
-`/var/lib/deployer/backups/`, switches to the new release, and starts it. If the
-new release does not start, the previous release and database are restored
+This downloads the latest release and verifies its checksums. The new release
+then performs the upgrade itself: it stops the service, backs up the database to
+`/var/lib/deployer/backups/`, switches over, and starts the service. If the new
+release does not start, the previous release and database are restored
 automatically. Preview containers keep running. Visitors may see a few seconds
 of "temporarily unavailable" while the gateway container is replaced.
 
-Upgrade the CLI on your laptop by running the client installer again.
+On your laptop, `deployer upgrade` replaces the CLI with the latest release.
+
+Useful variations:
+
+- `deployer upgrade --check` reports whether a newer release exists.
+- `deployer upgrade --version v0.3.0` installs a specific release.
+- `deployer server upgrade --dry-run` shows the server upgrade plan.
+
+`deployer status` points out when the CLI and the server run different versions.
+Releases before v0.2.2 don't have `deployer upgrade` yet. Upgrade those once
+with the installer: `curl -fsSL https://github.com/filstawski/deployer/releases/latest/download/install.sh | sh -s -- upgrade`
+on the server, and the plain installer command on your laptop.
 
 ## Configuration
 

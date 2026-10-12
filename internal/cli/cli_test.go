@@ -3,16 +3,23 @@ package cli
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/filstawski/deployer/internal/domain"
 	"github.com/filstawski/deployer/internal/fakes"
+	"github.com/filstawski/deployer/internal/release"
 	"github.com/filstawski/deployer/internal/testenv"
 )
 
@@ -290,5 +297,105 @@ func TestUsageErrors(t *testing.T) {
 	}
 	if r := h.ok("project"); !strings.Contains(r.stdout, "Available Commands") {
 		t.Fatalf("bare group should show help:\n%s", r.stdout)
+	}
+}
+
+// releaseServer serves a fake release containing the given binaries, built
+// for this platform and for linux.
+func releaseServer(t *testing.T, version string, binaries map[string]string) string {
+	t.Helper()
+	files := map[string]string{}
+	for bin, body := range binaries {
+		files[release.Asset(bin, version, runtime.GOOS, runtime.GOARCH)] = body
+		files[release.Asset(bin, version, "linux", runtime.GOARCH)] = body
+	}
+	var sums strings.Builder
+	for name, body := range files {
+		sum := sha256.Sum256([]byte(body))
+		fmt.Fprintf(&sums, "%s  %s\n", hex.EncodeToString(sum[:]), name)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch name := strings.TrimPrefix(r.URL.Path, "/download/"+version+"/"); {
+		case r.URL.Path == "/latest/download/VERSION":
+			fmt.Fprintln(w, version)
+		case name == "SHA256SUMS":
+			fmt.Fprint(w, sums.String())
+		case files[name] != "":
+			fmt.Fprint(w, files[name])
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+func (h *harness) runEnv(env func(*Env), args ...string) result {
+	h.t.Helper()
+	var out, errOut bytes.Buffer
+	e := Env{Stdin: strings.NewReader(""), Stdout: &out, Stderr: &errOut,
+		Getenv: func(k string) string { return h.vars[k] }, ConfigDir: h.config, WorkDir: h.dir, Now: time.Now}
+	env(&e)
+	code := Run(context.Background(), e, args)
+	return result{code, out.String(), errOut.String()}
+}
+
+func TestUpgradeClient(t *testing.T) {
+	h := newHarness(t)
+	url := releaseServer(t, "v9.9.9", map[string]string{"deployer": "#!/bin/sh\necho deployer v9.9.9\n"})
+	exe := filepath.Join(t.TempDir(), "deployer")
+	os.WriteFile(exe, []byte("old"), 0o755)
+	env := func(e *Env) { e.Executable, e.ReleaseURL, e.ServerReleases = exe, url, "/opt/deployer/releases" }
+
+	var check map[string]any
+	r := h.runEnv(env, "upgrade", "--check", "--json")
+	r.json(t, &check)
+	if r.code != 0 || check["latest"] != "v9.9.9" || check["update_available"] != true {
+		t.Fatalf("check: %d %v", r.code, check)
+	}
+	if b, _ := os.ReadFile(exe); string(b) != "old" {
+		t.Fatal("--check replaced the binary")
+	}
+	r = h.runEnv(env, "upgrade")
+	if r.code != 0 || !strings.Contains(r.stdout, "Upgraded deployer from dev to v9.9.9") {
+		t.Fatalf("upgrade: %d %s %s", r.code, r.stdout, r.stderr)
+	}
+	if out, err := exec.Command(exe).Output(); err != nil || string(out) != "deployer v9.9.9\n" {
+		t.Fatalf("upgraded binary: %q %v", out, err)
+	}
+	if r := h.runEnv(env, "upgrade", "--version", "latest"); r.code != ExitUsage {
+		t.Fatalf("invalid --version: %d", r.code)
+	}
+}
+
+func TestUpgradeServerDelegatesToNewRelease(t *testing.T) {
+	h := newHarness(t)
+	opt := t.TempDir()
+	releases := filepath.Join(opt, "releases")
+	exe := filepath.Join(releases, "v0.2.1", "deployer")
+	os.MkdirAll(filepath.Dir(exe), 0o755)
+	os.WriteFile(exe, []byte("current"), 0o755)
+	argsFile := filepath.Join(t.TempDir(), "args")
+	// The new release's deployer records how it was invoked and fails, to
+	// show that its exit code is passed through.
+	url := releaseServer(t, "v9.9.9", map[string]string{
+		"deployer":  "#!/bin/sh\necho \"$@\" > " + argsFile + "\nls \"$(dirname \"$0\")\" >> " + argsFile + "\nexit 7\n",
+		"deployerd": "daemon",
+	})
+	env := func(e *Env) { e.Executable, e.ReleaseURL, e.ServerReleases, e.Root = exe, url, releases, true }
+
+	if r := h.runEnv(func(e *Env) { env(e); e.Root = false }, "upgrade"); r.code != ExitAuth || !strings.Contains(r.stderr, "sudo deployer upgrade") {
+		t.Fatalf("non-root server upgrade: %d %s", r.code, r.stderr)
+	}
+	r := h.runEnv(env, "upgrade")
+	if r.code != 7 {
+		t.Fatalf("exit code not passed through: %d %s", r.code, r.stderr)
+	}
+	got, _ := os.ReadFile(argsFile)
+	if !strings.HasPrefix(string(got), "server upgrade --bundle "+opt+"/.download-") || !strings.Contains(string(got), "deployerd") {
+		t.Fatalf("new release invoked as: %s", got)
+	}
+	if entries, _ := os.ReadDir(opt); len(entries) != 1 {
+		t.Fatalf("download directory left behind: %v", entries)
 	}
 }

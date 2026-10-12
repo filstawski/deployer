@@ -9,6 +9,7 @@ with examples. This page describes the concepts that span commands.
 - [Projects](#projects)
 - [Tokens](#tokens)
 - [Output, exit codes, and scripting](#output-exit-codes-and-scripting)
+- [Upgrading](#upgrading)
 - [Server administration](#server-administration)
 
 ## Connecting
@@ -231,6 +232,18 @@ of creating another one. Reusing a key for a different request fails with
 deployer completion zsh > "${fpath[1]}/_deployer"     # also bash, fish, powershell
 ```
 
+## Upgrading
+
+```sh
+deployer upgrade            # replace this CLI with the latest release
+deployer upgrade --check    # only report whether a newer release exists
+deployer upgrade --version v0.3.0
+```
+
+Downloads are verified against the release's checksums before anything is
+replaced. On a Deployer server, `deployer upgrade` upgrades the whole server; it
+runs as root and is the same as `deployer server upgrade`.
+
 ## Server administration
 
 These commands run as root on the server; see [installation](installation.md).
@@ -238,7 +251,7 @@ These commands run as root on the server; see [installation](installation.md).
 | Command | Effect |
 | --- | --- |
 | `deployer server install --domain D [--tls-cert F --tls-key F]` | Install and start Deployer. |
-| `deployer server upgrade` | Switch to this binary's release, with database backup and rollback. |
+| `deployer server upgrade [--version V]` | Upgrade to the latest release, with database backup and rollback. Same as `deployer upgrade` on the server. |
 | `deployer server uninstall [--purge] --yes` | Remove Deployer and every preview. |
 
 All three accept `--dry-run`. `deployerd`, the controller, has a recovery command
