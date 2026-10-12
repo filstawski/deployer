@@ -38,7 +38,9 @@ predictable, scriptable way to put a branch online.
   that opens the app once it is ready. Stopped, expired, and failed previews say
   so.
 - **Friendly for agents.** Every command has `--json` output and stable exit codes
-  and error codes, and accepts idempotency keys for safe retries.
+  and error codes, and accepts idempotency keys for safe retries. An
+  [agent skill](docs/agents.md#install-the-skill) teaches coding agents the
+  workflow: `npx skills add filstawski/deployer`.
 - **Private repositories.** A GitHub App reads only the repositories you
   select, using short-lived, read-only tokens.
 
@@ -137,7 +139,7 @@ for Node.js, static sites, and monorepos.
 - [Preparing a project](docs/projects.md): `deployer.yaml`, Dockerfiles, and health checks
 - [CLI reference](docs/cli.md): every command, output formats, and exit codes
 - [Private GitHub repositories](docs/github.md)
-- [Guide for AI agents](docs/agents.md)
+- [Guide for AI agents](docs/agents.md): the agent skill, JSON output, and error codes
 - [HTTP API](docs/api.md)
 - [Architecture](docs/architecture.md): components, lifecycle, and security model
 - [Development](docs/development.md): building, testing, and releasing Deployer

@@ -10,6 +10,7 @@ with examples. This page describes the concepts that span commands.
 - [Projects](#projects)
 - [Tokens](#tokens)
 - [Output, exit codes, and scripting](#output-exit-codes-and-scripting)
+- [Guide for agents](#guide-for-agents)
 - [Upgrading](#upgrading)
 - [Server administration](#server-administration)
 
@@ -277,6 +278,23 @@ echo 'source <(deployer completion bash)' >> ~/.bashrc          # or just for yo
 **fish**: `deployer completion fish > ~/.config/fish/completions/deployer.fish`
 
 Open a new terminal afterwards. `echo $SHELL` shows which shell you use.
+
+## Guide for agents
+
+`deployer skill` prints a guide written for AI coding agents, matching this
+version of the CLI. A topic prints one part of it:
+
+| Command | Contents |
+| --- | --- |
+| `deployer skill` | The workflow: checking access, preparing a project, deploying, managing previews |
+| `deployer skill recipes` | `deployer.yaml`, and Dockerfile templates for common stacks |
+| `deployer skill commands` | Every command, its flags, and its JSON output |
+| `deployer skill troubleshooting` | What each error code means and how to fix it |
+| `deployer skill concepts` | Lifecycle, states, limits, and access |
+
+With `--json`, it prints `{"topic": "...", "content": "..."}`. The same files
+install as an agent skill with `npx skills add filstawski/deployer`; see the
+[guide for AI agents](agents.md).
 
 ## Upgrading
 

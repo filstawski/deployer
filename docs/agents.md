@@ -4,6 +4,40 @@ Deployer gives agents a predictable way to put a branch online and hand back a
 URL. This page is the contract: what to run, what comes back, and how to
 recover. It is also written to be pasted into an agent's instructions.
 
+## Install the skill
+
+Deployer ships an [agent skill](../skills/deployer/SKILL.md) that teaches agents
+such as Claude Code, Codex, and Cursor to use it. It covers this page in more
+depth, plus Dockerfile templates for common stacks, every command's JSON
+output, and the fix for each error. Agents load it when a task involves
+previews.
+
+```sh
+npx skills add filstawski/deployer        # for this project
+npx skills add filstawski/deployer -g     # for every project
+```
+
+The [skills CLI](https://github.com/vercel-labs/skills) asks which agents to
+install it for. `npx skills update` updates it later.
+
+The CLI prints the same guide, matching its own version, which works without
+Node.js and for agents without skill support:
+
+```sh
+deployer skill                  # the main guide
+deployer skill recipes          # deployer.yaml and Dockerfile templates
+deployer skill commands         # every command and its JSON output
+deployer skill troubleshooting  # what each error means and how to fix it
+deployer skill concepts         # lifecycle, states, limits, and access
+```
+
+To point an agent at it, add a line to the repository's `AGENTS.md` or
+`CLAUDE.md`:
+
+```markdown
+Preview deployments use Deployer. Before deploying, run `deployer skill` and follow it.
+```
+
 ## Setup
 
 Give the agent a token scoped to the projects it may deploy, through the
@@ -109,5 +143,7 @@ deployer deploy ... --detach --json          # don't wait; returns operation.id
 deployer operation wait OPERATION_ID --json  # wait for it later
 ```
 
-The same operations are available over the [HTTP API](api.md) for agents that
-can't run a CLI.
+For other errors and app-level problems, see the skill's
+[troubleshooting guide](../skills/deployer/references/troubleshooting.md). The
+same operations are available over the [HTTP API](api.md) for agents that can't
+run a CLI.

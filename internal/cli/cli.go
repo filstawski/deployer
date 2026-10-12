@@ -100,7 +100,9 @@ and removes it when its lifetime ends.
 Get started:
   deployer login https://api.example.com   Connect to your Deployer server
   deployer deploy                          Deploy the current branch
-  deployer list                            See your previews`,
+  deployer list                            See your previews
+
+Working with an AI agent? deployer skill prints a guide written for it.`,
 		SilenceUsage:      true,
 		SilenceErrors:     true,
 		CompletionOptions: cobra.CompletionOptions{HiddenDefaultCmd: true},
@@ -135,7 +137,7 @@ Get started:
 	add("project", a.projectCommand(), a.initCommand(), a.validateCommand())
 	add("access", a.loginCommand(), a.logoutCommand(), a.contextCommand(), a.statusCommand(), a.tokenCommand(), a.githubCommand())
 	add("server", a.serverCommand())
-	root.AddCommand(a.upgradeCommand(), a.versionCommand())
+	root.AddCommand(a.skillCommand(), a.upgradeCommand(), a.versionCommand())
 	return root
 }
 
