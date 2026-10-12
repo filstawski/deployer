@@ -190,6 +190,59 @@ func TestDeployFailureShowsHint(t *testing.T) {
 	}
 }
 
+func TestUpdate(t *testing.T) {
+	h := newHarness(t)
+	h.login()
+	h.ok("project", "add", "shop", "--repo", "https://github.com/acme/shop")
+	var created domain.CreateDeploymentResponse
+	h.ok("deploy", "shop", "--ref", "design/a", "--name", "design-a", "--json").json(t, &created)
+	commit := h.server.Source.Push("design/a")
+
+	var updated domain.CreateDeploymentResponse
+	r := h.ok("update", "design-a", "--json")
+	r.json(t, &updated)
+	var result domain.UpdateResult
+	json.Unmarshal(updated.Operation.Result, &result)
+	if updated.Deployment.ID != created.Deployment.ID || updated.Deployment.Commit != commit || !result.Changed || result.PreviousCommit != created.Deployment.Commit {
+		t.Fatalf("update: %+v %+v", updated, result)
+	}
+	if !strings.Contains(r.stderr, "Updating design-a from design/a @ "+shortCommit(created.Deployment.Commit)) {
+		t.Fatalf("no progress on stderr: %q", r.stderr)
+	}
+	if out := h.ok("update", "design-a").stdout; !strings.Contains(out, "design-a is already up to date") {
+		t.Fatalf("unchanged update:\n%s", out)
+	}
+
+	// A failed update reports that the previous version still serves.
+	h.server.Source.Push("design/a")
+	h.server.Runtime.Set(func(r *fakes.Runtime) { r.BuildErr = domain.Errorf(domain.CodeBuildFailed, "the image build failed") })
+	if r := h.run("", "update", "design-a"); r.code != ExitError || !strings.Contains(r.stderr, "design-a still runs "+shortCommit(commit)) || !strings.Contains(r.stderr, "deployer logs design-a --build") {
+		t.Fatalf("failed update: %d %s", r.code, r.stderr)
+	}
+	h.server.Runtime.Set(func(r *fakes.Runtime) { r.BuildErr = nil })
+
+	// Without a name, the branch picks the preview.
+	if r := h.run("", "update"); r.code != ExitUsage || !strings.Contains(r.stderr, "needs a deployment name") {
+		t.Fatalf("update without a name: %d %s", r.code, r.stderr)
+	}
+	h.ok("update", "--ref", "design/a")
+	if r := h.run("", "update", "--ref", "nope"); r.code != ExitNotFound || !strings.Contains(r.stderr, "nope has no preview") {
+		t.Fatalf("branch without a preview: %d %s", r.code, r.stderr)
+	}
+
+	var queued domain.CreateDeploymentResponse
+	h.ok("update", "design-a", "--ref", "design/b", "--detach", "--json").json(t, &queued)
+	if queued.Operation.Kind != domain.OpUpdateDeployment {
+		t.Fatalf("detached update: %+v", queued.Operation)
+	}
+	h.ok("operation", "wait", queued.Operation.ID)
+	var d domain.Deployment
+	h.ok("inspect", "design-a", "--json").json(t, &d)
+	if d.Ref != "design/b" || d.URL != created.Deployment.URL {
+		t.Fatalf("moved to design/b: %+v", d)
+	}
+}
+
 func git(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", args...)
@@ -397,5 +450,23 @@ func TestUpgradeServerDelegatesToNewRelease(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(opt); len(entries) != 1 {
 		t.Fatalf("download directory left behind: %v", entries)
+	}
+}
+
+// A server from before updates existed answers with a missing route.
+func TestUpdateOnOldServer(t *testing.T) {
+	old := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == "GET" {
+			json.NewEncoder(w).Encode(domain.Envelope[any]{Data: domain.Deployment{ID: "dep_1", Name: "design-a", Ref: "main", State: domain.StateRunning}})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(domain.Envelope[any]{Error: domain.Errorf(domain.CodeNotFound, "no API route for %s %s", r.Method, r.URL.Path)})
+	}))
+	defer old.Close()
+	h := &harness{t: t, vars: map[string]string{"DEPLOYER_URL": old.URL, "DEPLOYER_TOKEN": "dpl_" + strings.Repeat("a", 64)}, config: t.TempDir(), dir: t.TempDir()}
+	if r := h.run("", "update", "design-a"); r.code != ExitError || !strings.Contains(r.stderr, "too old to update previews") {
+		t.Fatalf("update on an old server: %d %s", r.code, r.stderr)
 	}
 }

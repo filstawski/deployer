@@ -115,10 +115,10 @@ func saveDeployment(ctx context.Context, q querier, d domain.Deployment, now tim
 	if d.Error != nil {
 		code, message, hint = string(d.Error.Code), d.Error.Message, d.Error.Hint
 	}
-	_, err := q.ExecContext(ctx, `UPDATE deployments SET commit_sha = ?, state = ?, error_code = ?, error_message = ?, error_hint = ?, image = ?, port = ?,
+	_, err := q.ExecContext(ctx, `UPDATE deployments SET ref = ?, commit_sha = ?, state = ?, error_code = ?, error_message = ?, error_hint = ?, image = ?, port = ?,
 		health_path = ?, health_timeout_ms = ?, env = ?, ttl_seconds = ?, updated_at = ?, ready_at = ?, expires_at = ?, purge_at = ?, operation_id = ?
 		WHERE id = ?`,
-		d.Commit, d.State, code, message, hint, d.Image, d.Port, d.HealthPath, d.HealthTimeout.Milliseconds(), string(env), d.TTLSeconds,
+		d.Ref, d.Commit, d.State, code, message, hint, d.Image, d.Port, d.HealthPath, d.HealthTimeout.Milliseconds(), string(env), d.TTLSeconds,
 		ms(now), msOrNil(d.ReadyAt), msOrNil(d.ExpiresAt), msOrNil(d.PurgeAt), d.OperationID, d.ID)
 	return err
 }

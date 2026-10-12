@@ -30,7 +30,10 @@ host, not your local files.
 
 At a terminal, a short form asks for the branch, name, and lifetime, already
 filled in with suggestions; press Enter to accept them. Flags answer their
-questions in advance, and --yes skips the form.
+questions in advance, and --yes skips the form. If the branch already has a
+preview, it first offers to update that one instead (see deployer update).
+
+Without a terminal, deploy always creates a new preview.
 
 The preview's URL is reserved immediately and shows a progress page until the
 app passes its health check. Its lifetime starts at that point.`,
@@ -60,6 +63,20 @@ app passes its health check. Its lifetime starts at that point.`,
 			interactive := a.canPrompt() && !yes
 			if err := a.resolveProject(ctx, c, &req, repo, interactive); err != nil {
 				return err
+			}
+			// Flags that describe a new preview skip the offer to update one.
+			if interactive && req.Name == "" && req.TTLSeconds == 0 {
+				branch := req.Ref
+				if branch == "" && repo != nil {
+					branch = repo.Branch
+				}
+				existing, err := a.offerUpdate(ctx, c, req.Project, branch)
+				if err != nil {
+					return err
+				}
+				if existing != "" {
+					return a.update(ctx, c, existing, "", repo, waitOptions{detach: detach, follow: follow, timeout: timeout})
+				}
 			}
 			switch {
 			case interactive:
@@ -117,7 +134,7 @@ app passes its health check. Its lifetime starts at that point.`,
 					title: st.ok("✓ ") + d.Name + " is live", accent: colorOK,
 					lines: []string{st.url(d.URL)},
 					fields: [][2]string{
-						{"Ref", d.Ref + st.muted(" @ "+shortCommit(d.Commit))}, {"Project", d.Project},
+						{"Ref", styledRef(st, d)}, {"Project", d.Project},
 						{"Expires", st.bold(a.out.when(d.ExpiresAt))},
 					},
 				})
@@ -327,20 +344,20 @@ func (a *app) warnLocalChanges(repo *localRepo, ref string) {
 	}
 }
 
-// projectForRepo returns the project registered for the repository's origin
-// remote, registering one if there is none.
-func (a *app) projectForRepo(ctx context.Context, c *client.Client, repo *localRepo) (domain.Project, error) {
+// findRepoProject returns the project registered for the repository's
+// origin remote, if there is one.
+func (a *app) findRepoProject(ctx context.Context, c *client.Client, repo *localRepo) (domain.Project, bool, error) {
 	if repo.Origin == "" {
-		return domain.Project{}, usage("the repository has no origin remote").WithHint("name the project: deployer deploy PROJECT")
+		return domain.Project{}, false, usage("the repository has no origin remote").WithHint("name the project: deployer deploy PROJECT")
 	}
 	url, err := domain.NormalizeRepository(repo.Origin)
 	if err != nil {
-		return domain.Project{}, usage("origin %q cannot be used: %v", repo.Origin, err).
+		return domain.Project{}, false, usage("origin %q cannot be used: %v", repo.Origin, err).
 			WithHint("register the project with an HTTPS URL: deployer project add NAME --repo https://...")
 	}
 	projects, err := c.Projects(ctx)
 	if err != nil {
-		return domain.Project{}, err
+		return domain.Project{}, false, err
 	}
 	var matches []domain.Project
 	for _, p := range projects {
@@ -349,12 +366,22 @@ func (a *app) projectForRepo(ctx context.Context, c *client.Client, repo *localR
 		}
 	}
 	switch len(matches) {
-	case 1:
-		return matches[0], nil
 	case 0:
+		return domain.Project{}, false, nil
+	case 1:
+		return matches[0], true, nil
 	default:
-		return domain.Project{}, usage("%d projects use %s", len(matches), url).WithHint("name one: deployer deploy %s", matches[0].Name)
+		return domain.Project{}, false, usage("%d projects use %s", len(matches), url).WithHint("name one: deployer deploy %s", matches[0].Name)
 	}
+}
+
+// projectForRepo returns the project registered for the repository's origin
+// remote, registering one if there is none.
+func (a *app) projectForRepo(ctx context.Context, c *client.Client, repo *localRepo) (domain.Project, error) {
+	if p, found, err := a.findRepoProject(ctx, c, repo); found || err != nil {
+		return p, err
+	}
+	url, _ := domain.NormalizeRepository(repo.Origin)
 
 	// Prefer the repository name; fall back to owner-repo, then a suffix.
 	candidates := []string{domain.Slug(repoName(url), domain.MaxProjectNameLength)}

@@ -40,6 +40,31 @@ The result is `{"deployment": Deployment, "operation": Operation}`. Without
 `PROJECT`, the project comes from the repository's `origin` remote, and is
 registered if needed. Outside a repository, `PROJECT` and `--ref` are required.
 
+## Updating
+
+```sh
+deployer update [NAME] [--ref BRANCH] --json
+```
+
+Rebuilds a preview from the latest pushed commit of its branch, keeping its ID,
+name, URL, and lifetime. Without `NAME`, it picks the preview of the current
+branch (or of `--ref`) in the repository's project; if there are several, it
+fails with exit 2 and lists them. `--ref` moves a named preview to another
+branch or commit. `--detach`, `--follow`, and `--timeout` work as for `deploy`.
+
+The result is `{"deployment": Deployment, "operation": Operation}`, where
+`operation.result` is:
+
+```json
+{ "previous_commit": "7d63b83b6f7e029c4be79244204d87c9ef71a460", "commit": "a1f09c2...", "changed": true }
+```
+
+`changed` is `false` when the ref still pointed at the running commit. A running
+preview keeps serving while the new version builds, and keeps its previous
+version if the new one fails; the error message then ends with
+`NAME still runs COMMIT`. Stopped and failed previews are rebuilt and started.
+Expired previews must be extended first.
+
 ## Deployments
 
 | Command | Result |
@@ -101,9 +126,11 @@ when it will be destroyed automatically.
 }
 ```
 
-`kind` is `deployment.create`, `deployment.start`, `deployment.stop`,
-`deployment.destroy`, or `project.verify`. `status` is `queued`, `running`,
-`succeeded`, `failed`, or `cancelled`. A failed operation has an `error`.
+`kind` is `deployment.create`, `deployment.update`, `deployment.start`,
+`deployment.stop`, `deployment.destroy`, or `project.verify`. `status` is
+`queued`, `running`, `succeeded`, `failed`, or `cancelled`. A failed operation
+has an `error`. An update shows its parameters as `request`, such as
+`{"ref": "design/b"}`.
 
 ## Projects
 

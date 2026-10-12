@@ -25,10 +25,15 @@ server's GitHub App, which an administrator sets up once.
 
 ## Deployments
 
-A deployment, or preview, is **one commit** of one project, built and running in
-its own container. It's fixed when requested: pushing to the branch later
-doesn't change it. To show new code, deploy again; that creates a new deployment
-with a new name, and the old one keeps running until it's destroyed or expires.
+A deployment, or preview, runs **one commit** of one project in its own
+container. Pushing to the branch doesn't change it by itself:
+
+- `deployer update NAME` moves it to the branch's latest commit, keeping its ID,
+  name, URL, and lifetime. A running preview keeps serving while the new version
+  builds, and keeps the previous version if the new one fails. Files the app
+  wrote inside its container don't carry over.
+- `deployer deploy` creates another deployment with a new name; the old one
+  keeps running until it's destroyed or expires.
 
 - **ID:** `dep_` plus 12 characters. Never reused.
 - **Name:** the subdomain. Lowercase letters, digits, and hyphens, up to 63
@@ -44,6 +49,8 @@ with a new name, and the old one keeps running until it's destroyed or expires.
 queued → building → starting → running ⇄ stopped
                                   ↓
                                expired
+running → (update builds while serving) → starting → running
+stopped or failed → (update) → building → starting → running
 any of them → failed (after a failed build, start, or health check)
 any of them → destroyed
 ```
@@ -78,7 +85,7 @@ any of them → destroyed
 
 ## Operations
 
-Every change (create, start, stop, destroy, verifying a project) is a durable
+Every change (create, update, start, stop, destroy, verifying a project) is a durable
 **operation** (`op_...`) that runs on the server, even if the CLI disconnects.
 Commands wait for it by default; `--detach` returns it right away, and
 `deployer operation wait ID --json` waits again later.

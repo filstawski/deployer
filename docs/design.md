@@ -10,9 +10,9 @@ planned features are meant to behave, so that they fit what exists. The
 - **One command, honest results.** A deploy returns a URL that works, or a clear
   reason it doesn't. The URL is reserved up front and explains itself while the
   app isn't ready.
-- **Exact and repeatable.** A deployment is one commit, resolved when it is
-  requested. Later pushes don't change it. Deploying again creates a new
-  deployment; changing an existing one will be an explicit update.
+- **Exact and repeatable.** A deployment runs one commit, resolved when it is
+  built. Later pushes don't change it. Deploying again creates a new
+  deployment; moving an existing one to newer commits is an explicit update.
 - **Temporary by default.** Everything has a lifetime and is removed afterwards.
   Lifetimes start at readiness, so slow builds don't use them up. Traffic never
   extends them.
@@ -38,6 +38,7 @@ These terms should keep their meaning as features are added:
 | Stop / start | The owner takes a preview offline, or back online. It doesn't wake on visits. |
 | Sleep / wake *(planned)* | Automatic idle stop, and starting again on the next visit. |
 | Extend | Add to the lifetime, up to the server's maximum. Revives an expired preview. |
+| Update | Move a preview to newer commits, keeping its name, URL, and lifetime. |
 | Retention | How long stopped, expired, and failed previews keep their resources. |
 | Destroy | Remove everything and release the name. Not reversible. |
 
@@ -72,10 +73,16 @@ dependencies' health checks. Sleeping stops the whole stack, keeping volumes.
 
 ### Updating a preview
 
-`deployer update NAME --ref design/a` builds the new commit while the old one
-keeps serving, then switches. Stateful stacks may need a short maintenance
-window. A failed build leaves the old version running. Updates never change the
-lifetime, and reverting the image doesn't undo database migrations.
+`deployer update` is available: it builds the new commit while the old one
+keeps serving, then replaces the container, and keeps the old version if the new
+one fails. Planned refinements:
+
+- Start the new container next to the old one and switch the route once it is
+  healthy, so the switch has no gap at all.
+- With multi-service apps, keep volumes across updates. Stateful stacks may need
+  a short maintenance window, and returning to the previous image doesn't undo
+  database migrations.
+- Pull request previews update on every push.
 
 ### Several previews at once
 

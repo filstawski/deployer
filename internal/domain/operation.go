@@ -14,6 +14,7 @@ const (
 	OpStartDeployment   OperationKind = "deployment.start"
 	OpStopDeployment    OperationKind = "deployment.stop"
 	OpDestroyDeployment OperationKind = "deployment.destroy"
+	OpUpdateDeployment  OperationKind = "deployment.update"
 )
 
 // OperationStatus is the progress of an operation.
@@ -43,12 +44,26 @@ type Operation struct {
 	Actor        string          `json:"actor"`
 	Attempts     int             `json:"attempts"`
 	Error        *Error          `json:"error,omitempty"`
-	Result       json.RawMessage `json:"result,omitempty"`
-	CreatedAt    time.Time       `json:"created_at"`
-	UpdatedAt    time.Time       `json:"updated_at"`
-	StartedAt    *time.Time      `json:"started_at,omitempty"`
-	FinishedAt   *time.Time      `json:"finished_at,omitempty"`
-	Deadline     time.Time       `json:"deadline"`
+	// Request holds the operation's parameters, for kinds that take any.
+	Request json.RawMessage `json:"request,omitempty"`
+	// Checkpoint is the handler's recorded progress, for resuming after an
+	// interruption. It is internal to the server.
+	Checkpoint json.RawMessage `json:"-"`
+	Result     json.RawMessage `json:"result,omitempty"`
+	CreatedAt  time.Time       `json:"created_at"`
+	UpdatedAt  time.Time       `json:"updated_at"`
+	StartedAt  *time.Time      `json:"started_at,omitempty"`
+	FinishedAt *time.Time      `json:"finished_at,omitempty"`
+	Deadline   time.Time       `json:"deadline"`
+}
+
+// UpdateResult is the result of a successful deployment.update operation.
+// Changed is false when the ref still pointed at the running commit, and
+// nothing was rebuilt.
+type UpdateResult struct {
+	PreviousCommit string `json:"previous_commit"`
+	Commit         string `json:"commit"`
+	Changed        bool   `json:"changed"`
 }
 
 // VerifyResult is the result of a successful project.verify operation.

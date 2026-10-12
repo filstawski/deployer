@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"testing"
 	"time"
@@ -252,5 +253,33 @@ func TestPrune(t *testing.T) {
 	// After pruning, the key can be reused for a different request.
 	if _, err := s.CreateProject(ctx, "tok_1", domain.CreateProjectRequest{Name: "api", Repository: "https://github.com/o/api"}, "k"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A database created by an earlier release gains the new columns, and its
+// operations keep working.
+func TestMigrateFromFirstRelease(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range []string{migrations[0], "PRAGMA user_version = 1",
+		`INSERT INTO operations (id, kind, status, project_id, actor, created_at, updated_at, deadline)
+			VALUES ('op_old', 'project.verify', 'succeeded', 'prj_1', 'tok_1', 1, 1, 1)`} {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	db.Close()
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	op, err := s.GetOperation(context.Background(), "op_old")
+	if err != nil || op.Request != nil || op.Kind != domain.OpVerifyProject {
+		t.Fatalf("old operation: %+v %v", op, err)
 	}
 }

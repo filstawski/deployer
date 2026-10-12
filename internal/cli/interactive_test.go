@@ -98,9 +98,51 @@ func TestDeployForm(t *testing.T) {
 		t.Fatalf("-y should skip the form: %d asked %v", r.code, p.asked)
 	}
 	// A taken name is rejected by validation.
-	p = &fakePrompter{t: t, answers: map[string]string{"Name": "flagged"}}
+	p = &fakePrompter{t: t, answers: map[string]string{"main already has a preview. Update it?": "", "Name": "flagged"}}
 	if r := h.interactive(p, "deploy"); r.code == 0 || !strings.Contains(r.stderr, "already named flagged") {
 		t.Fatalf("taken name: %d %s", r.code, r.stderr)
+	}
+}
+
+func TestDeployOffersUpdate(t *testing.T) {
+	h := newHarness(t)
+	h.login()
+	git(t, h.dir, "init", "--quiet", "-b", "main")
+	git(t, h.dir, "remote", "add", "origin", "https://github.com/acme/shop.git")
+	git(t, h.dir, "commit", "--quiet", "--allow-empty", "-m", "init")
+	git(t, h.dir, "update-ref", "refs/remotes/origin/main", "HEAD")
+	var first domain.CreateDeploymentResponse
+	h.ok("deploy", "-y", "--json").json(t, &first)
+	commit := h.server.Source.Push("main")
+
+	const question = "main already has a preview. Update it?"
+	p := &fakePrompter{t: t, answers: map[string]string{question: first.Deployment.Name}}
+	r := h.interactive(p, "deploy")
+	if r.code != 0 || !slices.Equal(p.asked, []string{question}) || !strings.Contains(r.stderr, "Updating "+first.Deployment.Name) {
+		t.Fatalf("update from deploy: %d asked %v\n%s", r.code, p.asked, r.stderr)
+	}
+	if options := p.options[question]; len(options) != 2 || !strings.HasPrefix(options[0].Label, "Update "+first.Deployment.Name) || options[1].Value != "" {
+		t.Fatalf("options: %v", options)
+	}
+	var list []domain.Deployment
+	h.ok("list", "--json").json(t, &list)
+	if len(list) != 1 || list[0].Commit != commit {
+		t.Fatalf("after updating from deploy: %+v", list)
+	}
+
+	// Choosing a new preview continues with the form.
+	p = &fakePrompter{t: t, answers: map[string]string{question: ""}}
+	if r := h.interactive(p, "deploy"); r.code != 0 || !slices.Equal(p.asked, []string{question, "Branch", "Name", "Lifetime"}) {
+		t.Fatalf("new preview from deploy: %d asked %v", r.code, p.asked)
+	}
+
+	// With two previews of the branch, update without a name asks which one.
+	if r := h.run("", "update"); r.code != ExitUsage || !strings.Contains(r.stderr, "main has 2 previews") {
+		t.Fatalf("ambiguous update: %d %s", r.code, r.stderr)
+	}
+	p = &fakePrompter{t: t, answers: map[string]string{"Which preview of main do you want to update?": first.Deployment.Name}}
+	if r := h.interactive(p, "update"); r.code != 0 || !strings.Contains(r.stdout, "already up to date") {
+		t.Fatalf("picked update: %d %s %s", r.code, r.stdout, r.stderr)
 	}
 }
 

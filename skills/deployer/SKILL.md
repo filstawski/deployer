@@ -37,8 +37,9 @@ so on. They match the installed version.
 
 - **Without a terminal the CLI never prompts.** It uses defaults or reports what
   is missing. `destroy` needs `--yes`, and `extend` needs `--by`.
-- **Each deploy creates a new deployment**, even for the same branch. To show new
-  code, deploy again, then destroy the old preview you created.
+- **Each deploy creates a new preview**, even for the same branch. To show new
+  commits on a preview you already shared, push, then run `deployer update NAME --json`.
+  It keeps the name and URL.
 - **Lifetimes start when the app is ready.** Visits never extend them. The
   server caps lifetimes: see `deployments.max_ttl_seconds` in `deployer status --json`.
 - **Only manage previews you created**, unless the user asks otherwise.
@@ -108,6 +109,9 @@ deployer deploy --ref BRANCH --ttl 1d --idempotency-key TASK-BRANCH --json
 - The command waits until the app is healthy, up to 30 minutes. With `--detach`,
   it returns right away; wait later with `deployer operation wait ID --json`.
 
+If the branch already has a preview you created for this task (check
+`deployer list --json`), update it instead; see step 4.
+
 On success, report `deployment.url` and `deployment.expires_at` from:
 
 ```json
@@ -134,6 +138,8 @@ and a new push.
 
 | Task | Command |
 | --- | --- |
+| Show newly pushed commits | `deployer update NAME --json` |
+| Move a preview to another branch | `deployer update NAME --ref BRANCH --json` |
 | List previews | `deployer list --json` (add `--project NAME`) |
 | One preview, with its last error | `deployer inspect NAME --json` |
 | App output | `deployer logs NAME --json` (`--lines 500` for more) |
@@ -142,6 +148,11 @@ and a new push.
 | Take it offline, keeping it | `deployer stop NAME --json` |
 | Bring it back, without rebuilding | `deployer start NAME --json` |
 | Remove it now | `deployer destroy NAME --yes --json` |
+
+`update` prints the same shape as `deploy`. `operation.result.changed` is `false`
+when the branch had no new commits, and nothing was rebuilt. If the new version
+fails, the error message ends with `NAME still runs COMMIT`: the previous
+version keeps serving, so fix the code, push, and update again.
 
 An expired preview answers HTTP 410 and is stopped. Within the retention period
 (7 days by default), `extend` gives it a new lifetime and `start` brings it back.

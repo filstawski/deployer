@@ -34,8 +34,12 @@ type Runtime interface {
 	Start(ctx context.Context, spec RunSpec) error
 	// Stop stops the container, keeping it and its image.
 	Stop(ctx context.Context, deploymentID string) error
-	// Remove deletes the container, network, and image.
+	// Remove deletes the container, network, and every image of the
+	// deployment.
 	Remove(ctx context.Context, deploymentID string) error
+	// RemoveImage deletes one image of the deployment that is no longer
+	// used, such as the previous version after an update.
+	RemoveImage(ctx context.Context, deploymentID, image string) error
 	// Running reports whether the container is running.
 	Running(ctx context.Context, deploymentID string) (bool, error)
 	// Logs returns the last lines of the container's output.

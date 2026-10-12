@@ -8,8 +8,10 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
@@ -22,7 +24,8 @@ import (
 type Runtime struct {
 	mu      sync.Mutex
 	running map[string]bool
-	images  map[string]bool
+	images  map[string]map[string]bool // Deployment ID → image IDs.
+	image   map[string]string          // Deployment ID → the running image.
 	env     map[string]map[string]string
 	builds  int
 
@@ -30,15 +33,19 @@ type Runtime struct {
 	BuildErr error
 	// BlockBuild makes the build of this deployment wait for cancellation.
 	BlockBuild string
+	// Gate, when set, holds every build until it receives a value.
+	Gate chan struct{}
 	// ExitOnStart makes containers stop right after starting.
 	ExitOnStart bool
+	// StartErr, when set, decides whether starting a container fails.
+	StartErr func(spec container.RunSpec) error
 }
 
 var _ container.Runtime = (*Runtime)(nil)
 
 // NewRuntime returns an empty runtime.
 func NewRuntime() *Runtime {
-	return &Runtime{running: map[string]bool{}, images: map[string]bool{}, env: map[string]map[string]string{}}
+	return &Runtime{running: map[string]bool{}, images: map[string]map[string]bool{}, image: map[string]string{}, env: map[string]map[string]string{}}
 }
 
 // Set changes the runtime's behavior under its lock.
@@ -54,27 +61,49 @@ func (r *Runtime) Build(ctx context.Context, spec container.BuildSpec, log io.Wr
 	fmt.Fprintln(log, "step 2/2")
 	r.mu.Lock()
 	r.builds++
-	block, err := r.BlockBuild == spec.DeploymentID, r.BuildErr
+	block, gate, err := r.BlockBuild == spec.DeploymentID, r.Gate, r.BuildErr
 	r.mu.Unlock()
 	if block {
 		<-ctx.Done()
 		return "", ctx.Err()
 	}
+	if gate != nil {
+		select {
+		case <-gate:
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
 	if err != nil {
 		return "", err
 	}
 	r.mu.Lock()
-	r.images[spec.DeploymentID] = true
-	r.mu.Unlock()
-	return "sha256:" + spec.DeploymentID, nil
+	defer r.mu.Unlock()
+	image := fmt.Sprintf("sha256:%s-%d", spec.DeploymentID, r.builds)
+	if r.images[spec.DeploymentID] == nil {
+		r.images[spec.DeploymentID] = map[string]bool{}
+	}
+	r.images[spec.DeploymentID][image] = true
+	return image, nil
 }
 
-// Start implements container.Runtime.
+// Start implements container.Runtime. Like Docker, it replaces the
+// container when the spec changes.
 func (r *Runtime) Start(_ context.Context, spec container.RunSpec) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.running[spec.DeploymentID] = !r.ExitOnStart
+	if !r.images[spec.DeploymentID][spec.Image] {
+		return domain.Errorf(domain.CodeStartFailed, "no such image %s", spec.Image)
+	}
+	r.image[spec.DeploymentID] = spec.Image
 	r.env[spec.DeploymentID] = spec.Env
+	if r.StartErr != nil {
+		if err := r.StartErr(spec); err != nil {
+			r.running[spec.DeploymentID] = false
+			return err
+		}
+	}
+	r.running[spec.DeploymentID] = !r.ExitOnStart
 	return nil
 }
 
@@ -92,6 +121,18 @@ func (r *Runtime) Remove(_ context.Context, id string) error {
 	defer r.mu.Unlock()
 	delete(r.running, id)
 	delete(r.images, id)
+	delete(r.image, id)
+	return nil
+}
+
+// RemoveImage implements container.Runtime.
+func (r *Runtime) RemoveImage(_ context.Context, id, image string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.image[id] == image {
+		return fmt.Errorf("image %s is in use", image)
+	}
+	delete(r.images[id], image)
 	return nil
 }
 
@@ -118,11 +159,21 @@ func (r *Runtime) IsRunning(id string) bool {
 	return r.running[id]
 }
 
-// HasImage reports whether a deployment's image exists.
-func (r *Runtime) HasImage(id string) bool {
+// HasImage reports whether a deployment has any image.
+func (r *Runtime) HasImage(id string) bool { return len(r.Images(id)) > 0 }
+
+// Images returns a deployment's image IDs, sorted.
+func (r *Runtime) Images(id string) []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.images[id]
+	return slices.Sorted(maps.Keys(r.images[id]))
+}
+
+// Image returns the image a deployment's container was last started from.
+func (r *Runtime) Image(id string) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.image[id]
 }
 
 // Env returns the environment a deployment's container was started with.
@@ -192,12 +243,23 @@ const Recipe = "version: 1\nsource:\n  dockerfile: Dockerfile\nhttp:\n  port: 30
 // Source writes a checkout containing Recipe and a Dockerfile. The ref
 // "missing" does not exist.
 type Source struct {
-	mu     sync.Mutex
-	recipe string
+	mu      sync.Mutex
+	recipe  string
+	commits map[string]string
 }
 
 // NewSource returns a source serving Recipe.
-func NewSource() *Source { return &Source{recipe: Recipe} }
+func NewSource() *Source { return &Source{recipe: Recipe, commits: map[string]string{}} }
+
+// Push makes ref point at a new commit, as if someone pushed to it, and
+// returns the commit.
+func (s *Source) Push(ref string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	commit := Commit(ref + "+" + s.commits[ref])
+	s.commits[ref] = commit
+	return commit
+}
 
 // SetRecipe replaces the deployer.yaml content; empty omits the file.
 func (s *Source) SetRecipe(recipe string) {
@@ -212,7 +274,7 @@ func (s *Source) Fetch(_ context.Context, _, ref, pinned, dest string) (string, 
 		return "", domain.Errorf(domain.CodeSourceFailed, "%q was not found in the repository", ref)
 	}
 	s.mu.Lock()
-	recipe := s.recipe
+	recipe, head := s.recipe, s.commits[ref]
 	s.mu.Unlock()
 	if err := os.MkdirAll(dest, 0o700); err != nil {
 		return "", err
@@ -221,8 +283,11 @@ func (s *Source) Fetch(_ context.Context, _, ref, pinned, dest string) (string, 
 		os.WriteFile(filepath.Join(dest, "deployer.yaml"), []byte(recipe), 0o644)
 	}
 	os.WriteFile(filepath.Join(dest, "Dockerfile"), []byte("FROM scratch\n"), 0o644)
-	if pinned != "" {
+	switch {
+	case pinned != "":
 		return pinned, nil
+	case head != "":
+		return head, nil
 	}
 	return Commit(ref), nil
 }

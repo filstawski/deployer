@@ -100,6 +100,7 @@ and removes it when its lifetime ends.
 Get started:
   deployer login https://api.example.com   Connect to your Deployer server
   deployer deploy                          Deploy the current branch
+  deployer update                          Rebuild its preview after you push
   deployer list                            See your previews
 
 Working with an AI agent? deployer skill prints a guide written for it.`,
@@ -132,7 +133,7 @@ Working with an AI agent? deployer skill prints a guide written for it.`,
 			root.AddCommand(c)
 		}
 	}
-	add("deploy", a.deployCommand(), a.listCommand(), a.inspectCommand(), a.logsCommand(), a.openCommand(),
+	add("deploy", a.deployCommand(), a.updateCommand(), a.listCommand(), a.inspectCommand(), a.logsCommand(), a.openCommand(),
 		a.stopCommand(), a.startCommand(), a.extendCommand(), a.destroyCommand(), a.operationCommand())
 	add("project", a.projectCommand(), a.initCommand(), a.validateCommand())
 	add("access", a.loginCommand(), a.logoutCommand(), a.contextCommand(), a.statusCommand(), a.tokenCommand(), a.githubCommand())

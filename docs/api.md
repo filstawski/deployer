@@ -68,6 +68,7 @@ Path parameters accept a name or an ID: `{project}` is `shop` or `prj_...`, and
 | `POST /v1/deployments/{deployment}/stop` | `deployments:write` | Stop (operation) |
 | `POST /v1/deployments/{deployment}/start` | `deployments:write` | Start (operation) |
 | `POST /v1/deployments/{deployment}/extend` | `deployments:write` | Extend the lifetime |
+| `POST /v1/deployments/{deployment}/update` | `deployments:write` | Rebuild from the latest commit (operation) |
 | `DELETE /v1/deployments/{deployment}` | `deployments:write` | Destroy (operation) |
 | `GET /v1/deployments/{deployment}/logs` | `deployments:read` | App or build output |
 | `GET /v1/operations/{operation}` | read scope of its resource | Get an operation |
@@ -132,10 +133,13 @@ when it will be destroyed automatically.
 }
 ```
 
-`kind` is `deployment.create`, `deployment.start`, `deployment.stop`,
-`deployment.destroy`, or `project.verify`. `status` is `queued`, `running`,
-`succeeded`, `failed`, or `cancelled`. Failed and cancelled operations have an
-`error`. A successful `project.verify` has `"result": {"head_commit": "..."}`.
+`kind` is `deployment.create`, `deployment.update`, `deployment.start`,
+`deployment.stop`, `deployment.destroy`, or `project.verify`. `status` is
+`queued`, `running`, `succeeded`, `failed`, or `cancelled`. Failed and cancelled
+operations have an `error`. Operations that take parameters show them as
+`request`. A successful `project.verify` has `"result": {"head_commit": "..."}`,
+and a successful `deployment.update` has
+`"result": {"previous_commit": "...", "commit": "...", "changed": true}`.
 
 ## Requests
 
@@ -155,6 +159,20 @@ Returns `201` with the project. GitHub SSH URLs are converted to HTTPS.
 
 `name` and `ttl_seconds` are optional. Returns `202` with
 `{"deployment": {...}, "operation": {...}}`. The URL is reserved immediately.
+
+**Update**: `POST /v1/deployments/{deployment}/update`
+
+```json
+{ "ref": "design/b" }
+```
+
+Rebuilds the deployment from the latest commit of its ref, or of `ref` when
+given, keeping its name, URL, and lifetime. The body may be empty. Returns `202`
+with the operation. A running deployment keeps serving while the new version
+builds. Its container is then replaced, and visitors see the progress page until
+the new version passes its health check. If it doesn't, the previous version is
+started again, and the operation fails. `changed` is `false` when the ref still
+pointed at the running commit. Expired deployments must be extended first.
 
 **Extend**: `POST /v1/deployments/{deployment}/extend`
 

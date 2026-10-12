@@ -31,6 +31,7 @@ import (
 
 // fixtureSource serves the hello example as a prebuilt binary, so builds
 // don't depend on pulling a Go toolchain image. Each ref gets its own commit.
+// The ref "broken" starts a program that doesn't exist.
 type fixtureSource struct{ binary []byte }
 
 func (s fixtureSource) Fetch(_ context.Context, _, ref, pinned, dest string) (string, error) {
@@ -39,6 +40,9 @@ func (s fixtureSource) Fetch(_ context.Context, _, ref, pinned, dest string) (st
 	files := map[string]string{
 		"Dockerfile":    "FROM scratch\nCOPY hello /hello\nUSER 65532:65532\nENTRYPOINT [\"/hello\"]\n",
 		"deployer.yaml": "version: 1\nsource:\n  dockerfile: Dockerfile\nhttp:\n  port: 8080\n  healthcheck:\n    timeout: 20s\n",
+	}
+	if ref == "broken" {
+		files["Dockerfile"] = "FROM scratch\nCOPY hello /hello\nENTRYPOINT [\"/missing\"]\n"
 	}
 	for name, body := range files {
 		os.WriteFile(filepath.Join(dest, name), []byte(body), 0o644)
@@ -140,17 +144,22 @@ func TestEndToEnd(t *testing.T) {
 	}()
 
 	token := waitForToken(t, ctx, cfg, current)
-	deployer := func(args ...string) string {
-		t.Helper()
+	try := func(args ...string) (int, string) {
 		var out, errOut bytes.Buffer
 		env := cli.Env{Stdin: strings.NewReader(""), Stdout: &out, Stderr: &errOut, ConfigDir: t.TempDir(), WorkDir: t.TempDir(), Now: time.Now,
 			Getenv: func(k string) string {
 				return map[string]string{"DEPLOYER_URL": "http://" + cfg.API.Listen, "DEPLOYER_TOKEN": token}[k]
 			}}
-		if code := cli.Run(ctx, env, append(args, "--json")); code != 0 {
-			t.Fatalf("deployer %v: exit %d\n%s%s", args, code, out.String(), errOut.String())
+		code := cli.Run(ctx, env, append(args, "--json"))
+		return code, out.String() + errOut.String()
+	}
+	deployer := func(args ...string) string {
+		t.Helper()
+		code, out := try(args...)
+		if code != 0 {
+			t.Fatalf("deployer %v: exit %d\n%s", args, code, out)
 		}
-		return out.String()
+		return out
 	}
 	visit := func(host, path string) (int, string) {
 		t.Helper()
@@ -224,6 +233,32 @@ func TestEndToEnd(t *testing.T) {
 	}
 	deployer("extend", "alpha", "--by", "1h")
 
+	// An update keeps the name and URL, serves the new commit, and removes
+	// the previous image.
+	var updated domain.CreateDeploymentResponse
+	json.Unmarshal([]byte(deployer("update", "alpha", "--ref", "design/c")), &updated)
+	if code, body := visit("alpha.e2e.localhost", "/"); code != 200 || updated.Deployment.Commit == alpha.Commit || !strings.Contains(body, updated.Deployment.Commit) {
+		t.Fatalf("updated alpha: %d %s", code, body)
+	}
+	images := run(t, nil, "docker", "image", "ls", "--all", "--quiet", "--filter", "label=io.deployer.deployment="+alpha.ID)
+	if n := len(strings.Fields(images)); n != 1 {
+		t.Fatalf("alpha has %d images after the update", n)
+	}
+	t.Log("updated alpha in place")
+
+	// A version that never becomes healthy is replaced by the previous one.
+	if code, out := try("update", "alpha", "--ref", "broken"); code != 1 || !strings.Contains(out, "START_FAILED") || !strings.Contains(out, "alpha still runs") {
+		t.Fatalf("broken update: exit %d\n%s", code, out)
+	}
+	if code, body := visit("alpha.e2e.localhost", "/"); code != 200 || !strings.Contains(body, updated.Deployment.Commit) {
+		t.Fatalf("after the broken update: %d %s", code, body)
+	}
+	images = run(t, nil, "docker", "image", "ls", "--all", "--quiet", "--filter", "label=io.deployer.deployment="+alpha.ID)
+	if n := len(strings.Fields(images)); n != 1 {
+		t.Fatalf("alpha has %d images after the broken update", n)
+	}
+	t.Log("a failed update kept the previous version")
+
 	deployer("destroy", "beta", "--yes")
 	if code, body := visit("beta.e2e.localhost", "/"); code != 404 || !strings.Contains(body, "not found") {
 		t.Fatalf("destroyed: %d %s", code, body)
@@ -231,7 +266,7 @@ func TestEndToEnd(t *testing.T) {
 	if out, _ := exec.Command("docker", "container", "inspect", "deployer-"+beta.Deployment.ID).CombinedOutput(); !strings.Contains(string(out), "No such") {
 		t.Fatalf("destroyed container remains: %s", out)
 	}
-	t.Log("verified progress pages, routing, isolation, logs, stop/start, extend, and destroy")
+	t.Log("verified progress pages, routing, isolation, logs, stop/start, extend, update, and destroy")
 
 	// A controller restart keeps serving existing previews.
 	current.stop()

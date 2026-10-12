@@ -259,6 +259,13 @@ func (c *Client) Destroy(ctx context.Context, ref, key string) (domain.Operation
 	return out, c.do(ctx, "DELETE", "/v1/deployments/"+esc(ref), key, nil, &out)
 }
 
+// Update queues moving a deployment to the latest commit of its ref, or of
+// req.Ref.
+func (c *Client) Update(ctx context.Context, ref string, req domain.UpdateDeploymentRequest, key string) (domain.Operation, error) {
+	var out domain.Operation
+	return out, c.do(ctx, "POST", "/v1/deployments/"+esc(ref)+"/update", key, req, &out)
+}
+
 // Extend lengthens a deployment's lease.
 func (c *Client) Extend(ctx context.Context, ref string, by time.Duration) (domain.Deployment, error) {
 	var out domain.Deployment

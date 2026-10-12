@@ -95,6 +95,7 @@ func (c *Controller) Register(d *operations.Dispatcher) {
 	d.Handle(domain.OpStartDeployment, c.locked(c.handleStart))
 	d.Handle(domain.OpStopDeployment, c.locked(c.handleStop))
 	d.Handle(domain.OpDestroyDeployment, c.locked(c.handleDestroy))
+	d.Handle(domain.OpUpdateDeployment, c.locked(c.handleUpdate))
 	d.Handle(domain.OpVerifyProject, c.handleVerify)
 	d.OnFailure(c.onFailure)
 }

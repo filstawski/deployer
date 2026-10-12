@@ -56,6 +56,8 @@ the CLI binary contains no server code.
 | `starting` | health check passes | `running` |
 | `queued`, `building`, `starting` | any step fails | `failed` |
 | `running` | `stop` | `stopped` |
+| `running` | `update`: new version built | `starting`, then back to `running` |
+| `stopped`, `failed` | `update` | `building` |
 | `stopped`, `failed` (with an image) | `start` | `starting` |
 | `running` | the container exits on its own | `failed` |
 | `running`, `stopped`, `starting` | the lifetime ends | `expired` |
@@ -80,7 +82,17 @@ the CLI binary contains no server code.
    holds even if the controller is down. The reconciler then stops the container.
 6. **Purge.** At `purge_at`, which is the retention period after expiry or
    failure, the reconciler queues a `destroy`, which removes the container,
-   network, image, and logs.
+   network, images, and logs.
+
+**Updates** (`deployment.update`) build the new commit without touching the
+running version, whose fields stay on the deployment until the switch. Before
+switching, the handler records a checkpoint on the operation with both versions.
+It then records the new version, replaces the container, and waits for the
+health check. If that fails, it notes the failure in the checkpoint, records the
+previous version again, and starts it; the operation fails with the reason while
+the deployment stays `running`. A retry after an interruption resumes from the
+checkpoint, so it finishes either the switch or the return. The image that is no
+longer recorded is removed once the outcome is final.
 
 ## Operations
 
@@ -123,7 +135,7 @@ a binary refuses to open a database newer than it understands.
 | --- | --- |
 | `projects` | Name and canonical HTTPS repository URL |
 | `deployments` | State, ref, commit, image, recipe settings, lease times, last error |
-| `operations` | Kind, status, attempts, deadline, result or error |
+| `operations` | Kind, status, request parameters, attempts, deadline, result or error |
 | `tokens` | Name, SHA-256 hash of the secret, scopes, project grants, expiry, revocation |
 | `idempotency_keys` | Token, key, request hash, and resulting resource, kept for 7 days |
 | `events` | Audit log of who created, changed, and revoked what, kept for 90 days |

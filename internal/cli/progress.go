@@ -182,9 +182,12 @@ func (a *app) waitDeployment(parent context.Context, c *client.Client, op domain
 			s.complete()
 			return d, nil
 		}
-		if d.State.InProgress() {
+		switch {
+		case d.State.InProgress():
 			s.step(string(d.State), describe(d))
-		} else {
+		case current.Kind == domain.OpUpdateDeployment && d.State == domain.StateRunning:
+			s.set("Building the new version; the current one keeps serving")
+		default:
 			s.set(waitingFor(current.Kind))
 		}
 		select {

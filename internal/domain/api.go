@@ -61,6 +61,13 @@ type CreateDeploymentResponse struct {
 	Operation  Operation  `json:"operation"`
 }
 
+// UpdateDeploymentRequest is the body of POST /v1/deployments/{id}/update.
+type UpdateDeploymentRequest struct {
+	// Ref moves the deployment to another branch or commit; the deployment's
+	// own ref when empty.
+	Ref string `json:"ref,omitempty"`
+}
+
 // ExtendRequest is the body of POST /v1/deployments/{id}/extend.
 type ExtendRequest struct {
 	Seconds int64 `json:"seconds"`

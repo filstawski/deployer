@@ -117,7 +117,7 @@ func (a *app) printDeployment(d domain.Deployment) {
 		title: d.Name + "  " + st.state(d.State), accent: stateColor(d.State),
 		lines: []string{st.url(d.URL)},
 		fields: [][2]string{
-			{"Ref", d.Ref + st.muted(" @ "+shortCommit(d.Commit))}, {"Project", d.Project},
+			{"Ref", styledRef(st, d)}, {"Project", d.Project},
 			{"Created", a.out.when(&d.CreatedAt)}, {"Ready", a.out.when(d.ReadyAt)},
 			{"Expires", st.bold(a.out.when(d.ExpiresAt))}, {"Lifetime", lifetime},
 			{"Removed", st.muted(a.out.when(d.PurgeAt))}, {"ID", st.muted(d.ID)},

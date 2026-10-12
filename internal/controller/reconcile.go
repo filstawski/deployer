@@ -154,7 +154,7 @@ func (c *Controller) reconcileOne(ctx context.Context, d domain.Deployment, boot
 		}
 		if boot {
 			c.log.Info("restarting deployment after controller start", "deployment", d.ID)
-			_, err := c.enqueue(ctx, SystemActor, d.ID, "", domain.OpStartDeployment, func(domain.Deployment, []domain.Operation) (*domain.Operation, error) { return nil, nil })
+			_, err := c.enqueue(ctx, SystemActor, d.ID, "", domain.OpStartDeployment, nil, func(domain.Deployment, []domain.Operation) (*domain.Operation, error) { return nil, nil })
 			return err
 		}
 		_, err = c.transition(ctx, d.ID, []domain.State{domain.StateRunning}, func(d *domain.Deployment) {

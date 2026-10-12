@@ -45,6 +45,7 @@ func (s *Server) routes() {
 	s.handle("POST /v1/deployments/{deployment}/stop", domain.ScopeDeploymentsWrite, s.action(s.Controller.Stop))
 	s.handle("POST /v1/deployments/{deployment}/start", domain.ScopeDeploymentsWrite, s.action(s.Controller.Start))
 	s.handle("POST /v1/deployments/{deployment}/extend", domain.ScopeDeploymentsWrite, s.extendDeployment)
+	s.handle("POST /v1/deployments/{deployment}/update", domain.ScopeDeploymentsWrite, s.updateDeployment)
 	s.handle("GET /v1/deployments/{deployment}/logs", domain.ScopeDeploymentsRead, s.deploymentLogs)
 
 	s.handle("GET /v1/operations/{operation}", "", s.getOperation)
@@ -213,6 +214,19 @@ func (s *Server) extendDeployment(r *request) (int, any, error) {
 	}
 	d, err = s.Controller.Extend(r.Context(), r.token.ID, d.ID, time.Duration(in.Seconds)*time.Second)
 	return http.StatusOK, d, err
+}
+
+func (s *Server) updateDeployment(r *request) (int, any, error) {
+	d, err := s.deployment(r)
+	if err != nil {
+		return 0, nil, err
+	}
+	var in domain.UpdateDeploymentRequest
+	if err := decode(r, &in); err != nil {
+		return 0, nil, err
+	}
+	op, err := s.Controller.Update(r.Context(), r.token.ID, d.ID, r.Header.Get("Idempotency-Key"), in)
+	return http.StatusAccepted, op, err
 }
 
 func (s *Server) deploymentLogs(r *request) (int, any, error) {

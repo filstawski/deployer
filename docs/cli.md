@@ -6,6 +6,7 @@ with examples. This page describes the concepts that span commands.
 - [Interactive use](#interactive-use)
 - [Connecting](#connecting)
 - [Deploying](#deploying)
+- [Updating a preview](#updating-a-preview)
 - [Managing deployments](#managing-deployments)
 - [Projects](#projects)
 - [Tokens](#tokens)
@@ -106,8 +107,9 @@ so the CLI warns when you have unpushed commits or uncommitted changes.
 | `--idempotency-key` | Repeat a request safely; see [scripting](#retries-and-idempotency). |
 
 Names must be unique among live deployments, and are released when a deployment
-is destroyed. Each deploy creates a new deployment, even for the same branch;
-destroy the old one when you no longer need it.
+is destroyed. Each deploy creates a new deployment, even for the same branch. To
+show new commits on an existing preview, [update](#updating-a-preview) it. At a
+terminal, `deploy` offers that when the branch already has a preview.
 
 What happens after `deploy`:
 
@@ -119,6 +121,42 @@ What happens after `deploy`:
 
 If a step fails, the deployment ends **failed** and `deploy` prints the error
 with a hint. `deployer inspect NAME` shows it later.
+
+## Updating a preview
+
+After you push new commits, update the preview instead of deploying a new one.
+It keeps its name, URL, and lifetime, so links you already shared keep working:
+
+```sh
+deployer update                          # the preview of the current branch
+deployer update design-a                 # a preview by name
+deployer update design-a --ref design/b  # move it to another branch
+```
+
+Without a name, `update` looks for the preview of the current branch, or of
+`--ref`, in the repository's project. When there are several, it asks which one
+at a terminal.
+
+- **A running preview keeps serving** while the new version builds. Its
+  container is then replaced, which takes a few seconds; meanwhile visitors see
+  the progress page, which reloads into the app.
+- **If the new version fails** to build, start, or pass its health check, the
+  previous version keeps running, and `update` reports the error with
+  `PREVIEW still runs COMMIT`. The new version's output is at the end of
+  `deployer logs NAME --build`. Only if the previous version can't be started
+  again either does the preview end up failed.
+- **Nothing to do:** if the branch still points at the running commit, `update`
+  says the preview is already up to date and doesn't rebuild.
+- **Stopped and failed previews** are rebuilt and started, like a new deploy.
+  A preview that failed its first build gets its lifetime once it works.
+- **Files the app wrote** inside its container are not carried over to the new
+  version.
+- **The build log** (`deployer logs NAME --build`) shows the update's build from
+  then on, even when the update finds nothing to rebuild or fails.
+
+`update` takes `-d, --detach`, `-f, --follow`, and `--timeout`, like `deploy`.
+With `--json`, it prints `{"deployment": {...}, "operation": {...}}`; the
+operation's `result` has `previous_commit`, `commit`, and `changed`.
 
 ## Managing deployments
 
@@ -158,7 +196,7 @@ immediately.
 
 ### Operations
 
-`deploy`, `stop`, `start`, `destroy`, and `project verify` run as **operations**
+`deploy`, `update`, `stop`, `start`, `destroy`, and `project verify` run as **operations**
 on the server. An operation keeps running when the CLI exits or loses its
 connection:
 

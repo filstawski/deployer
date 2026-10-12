@@ -88,7 +88,10 @@ cannot register projects, create tokens, or see other projects.
    Report `deployment.url`. A `state` of `running` means the health check
    passed.
 
-5. **Clean up** when the preview is no longer needed:
+5. **Iterate** on the same preview after pushing more commits:
+   `deployer update NAME --json`. It keeps the URL, and prints the same shape as
+   `deploy`; `operation.result.changed` is `false` if there was nothing new.
+6. **Clean up** when the preview is no longer needed:
    `deployer destroy NAME --yes --json`. Unused previews expire on their own.
 
 ## Rules

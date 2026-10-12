@@ -121,11 +121,18 @@ func shortCommit(c string) string {
 }
 
 // refAt renders "design/a @ 7d63b83b6f7e".
-func refAt(d domain.Deployment) string {
-	if d.Commit == "" {
+func refAt(d domain.Deployment) string { return styledRef(styles{}, d) }
+
+// styledRef renders a deployment's ref and commit, such as "main @ 7d63b83b6f7e".
+// A ref that is a commit is shortened instead.
+func styledRef(st styles, d domain.Deployment) string {
+	switch {
+	case domain.IsCommitSHA(d.Ref):
+		return shortCommit(d.Ref)
+	case d.Commit == "":
 		return d.Ref
 	}
-	return d.Ref + " @ " + shortCommit(d.Commit)
+	return d.Ref + st.muted(" @ "+shortCommit(d.Commit))
 }
 
 func errorText(e *domain.Error) string {

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -219,14 +220,32 @@ func (d *Docker) Remove(ctx context.Context, id string) error {
 			return err
 		}
 	}
-	if _, exists, err := d.inspectLabels(ctx, "image", imageName(id), id); err != nil {
+	// An update leaves earlier builds untagged, so find images by label.
+	out, err := d.run(ctx, nil, "image", "ls", "--all", "--quiet", "--no-trunc",
+		"--filter", "label="+labelInstallation+"="+d.opts.InstallationID, "--filter", "label="+labelDeployment+"="+id)
+	if err != nil {
 		return err
-	} else if exists {
-		if _, err := d.run(ctx, nil, "image", "rm", "--force", imageName(id)); err != nil && !missing(err.Error()) {
+	}
+	images := strings.Fields(out)
+	slices.Sort(images)
+	if images = slices.Compact(images); len(images) > 0 {
+		if _, err := d.run(ctx, nil, append([]string{"image", "rm", "--force"}, images...)...); err != nil && !missing(err.Error()) {
 			return err
 		}
 	}
 	return nil
+}
+
+// RemoveImage implements container.Runtime.
+func (d *Docker) RemoveImage(ctx context.Context, id, image string) error {
+	if _, exists, err := d.inspectLabels(ctx, "image", image, id); err != nil || !exists {
+		return err
+	}
+	_, err := d.run(ctx, nil, "image", "rm", image)
+	if err != nil && missing(err.Error()) {
+		return nil
+	}
+	return err
 }
 
 // Running implements container.Runtime.

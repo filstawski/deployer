@@ -9,7 +9,7 @@ import (
 	"github.com/filstawski/deployer/internal/domain"
 )
 
-const operationColumns = `id, kind, status, project_id, deployment_id, actor, attempts, error_code, error_message, error_hint, result,
+const operationColumns = `id, kind, status, project_id, deployment_id, actor, attempts, error_code, error_message, error_hint, request, checkpoint, result,
 	created_at, updated_at, started_at, finished_at, deadline`
 
 // GetOperation returns an operation by ID.
@@ -27,9 +27,13 @@ func getOperation(ctx context.Context, q querier, id string) (domain.Operation, 
 
 // InsertOperation stores a new queued operation.
 func (t *Tx) InsertOperation(o domain.Operation) error {
-	_, err := t.q.ExecContext(t.ctx, `INSERT INTO operations (id, kind, status, project_id, deployment_id, actor, created_at, updated_at, deadline)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		o.ID, o.Kind, o.Status, o.ProjectID, o.DeploymentID, o.Actor, ms(o.CreatedAt), ms(o.UpdatedAt), ms(o.Deadline))
+	var request any
+	if len(o.Request) > 0 {
+		request = string(o.Request)
+	}
+	_, err := t.q.ExecContext(t.ctx, `INSERT INTO operations (id, kind, status, project_id, deployment_id, actor, request, created_at, updated_at, deadline)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		o.ID, o.Kind, o.Status, o.ProjectID, o.DeploymentID, o.Actor, request, ms(o.CreatedAt), ms(o.UpdatedAt), ms(o.Deadline))
 	return err
 }
 
@@ -113,6 +117,17 @@ func (s *Store) FinishOperation(ctx context.Context, id string, status domain.Op
 	})
 }
 
+// SetCheckpoint records a running operation's progress as JSON, so that its
+// handler can resume from it after an interruption.
+func (s *Store) SetCheckpoint(ctx context.Context, id string, checkpoint any) error {
+	b, err := json.Marshal(checkpoint)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, "UPDATE operations SET checkpoint = ?, updated_at = ? WHERE id = ? AND status = 'running'", string(b), ms(s.now()), id)
+	return err
+}
+
 // RequeueRunning returns operations left running by a previous process to
 // the queue. Call it only while holding the controller lock, before
 // dispatching.
@@ -145,16 +160,22 @@ func listOperations(ctx context.Context, q querier, where string, args ...any) (
 func scanOperation(row scanner) (domain.Operation, error) {
 	var o domain.Operation
 	var code, message, hint string
-	var result sql.NullString
+	var request, checkpoint, result sql.NullString
 	var created, updated, deadline int64
 	var started, finished sql.NullInt64
-	err := row.Scan(&o.ID, &o.Kind, &o.Status, &o.ProjectID, &o.DeploymentID, &o.Actor, &o.Attempts, &code, &message, &hint, &result,
+	err := row.Scan(&o.ID, &o.Kind, &o.Status, &o.ProjectID, &o.DeploymentID, &o.Actor, &o.Attempts, &code, &message, &hint, &request, &checkpoint, &result,
 		&created, &updated, &started, &finished, &deadline)
 	if err != nil {
 		return o, err
 	}
 	if code != "" {
 		o.Error = &domain.Error{Code: domain.Code(code), Message: message, Hint: hint}
+	}
+	if request.Valid {
+		o.Request = json.RawMessage(request.String)
+	}
+	if checkpoint.Valid {
+		o.Checkpoint = json.RawMessage(checkpoint.String)
 	}
 	if result.Valid {
 		o.Result = json.RawMessage(result.String)

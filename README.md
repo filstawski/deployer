@@ -30,6 +30,9 @@ predictable, scriptable way to put a branch online.
 - **One command.** `deployer deploy` in a repository asks which branch, what
   name, and for how long, with sensible answers already filled in. The project is
   registered on first use. Every question also has a flag, for scripts.
+- **Links that last.** After you push, `deployer update` rebuilds the preview
+  at the same URL. The old version serves until the new one is built, and stays
+  if the new one fails.
 - **Isolated.** Every preview has its own container, network, and resource limits.
   Previews cannot reach each other.
 - **Temporary by default.** Lifetimes start when the app is ready. Expired
@@ -93,6 +96,8 @@ deployer init        # writes deployer.yaml; commit and push it
 deployer deploy
 ```
 
+After you push more commits, `deployer update` brings the same preview up to date.
+
 Private GitHub repositories need a one-time [GitHub connection](docs/github.md).
 
 ## Everyday commands
@@ -100,6 +105,7 @@ Private GitHub repositories need a one-time [GitHub connection](docs/github.md).
 | Command | What it does |
 | --- | --- |
 | `deployer deploy [--ref BRANCH] [--name NAME] [--ttl 3d]` | Deploy a branch as a new preview |
+| `deployer update [NAME]` | Rebuild a preview after you push, keeping its URL |
 | `deployer list` | List previews with their state, expiry, and URL |
 | `deployer inspect NAME` | Show one preview, including why it failed |
 | `deployer logs NAME [--build]` | Show the app's output, or the build log |

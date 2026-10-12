@@ -98,6 +98,9 @@ CREATE TABLE events (
 	kind    TEXT NOT NULL,
 	subject TEXT NOT NULL
 );
+`, `
+ALTER TABLE operations ADD COLUMN request TEXT;
+ALTER TABLE operations ADD COLUMN checkpoint TEXT;
 `}
 
 func (s *Store) migrate() error {

@@ -70,6 +70,18 @@ a database that isn't reachable, an `exit 0` start command (the process must
 keep running), or running out of memory (512 MiB). Fix and deploy again. If it
 stopped later and the code was fine, `deployer start NAME --json` restarts it.
 
+### Errors from `deployer update`
+
+Updates fail with the same codes as deploys. When the message ends with
+`NAME still runs COMMIT`, the previous version is still serving, and nothing
+else changed: fix the cause, push, and run `deployer update NAME --json` again.
+After a failed start or health check, the new version's output is at the end of
+`deployer logs NAME --build --json`, because `deployer logs NAME` shows the
+version that is running.
+
+An update of a stopped or failed preview that fails leaves it `failed`, like a
+deploy. `NAME has expired` means: extend it first, then update.
+
 ### START_FAILED: Docker couldn't create or start the container
 
 Usually a server-side problem. Retry once with `deployer start NAME --json`, or
@@ -115,12 +127,12 @@ Deploy again once. If it repeats, report it to the user.
 | Symptom | Cause and fix |
 | --- | --- |
 | Assets or API calls go to `localhost` | URLs were configured for local development. Use relative URLs, or read `DEPLOYER_URL` at runtime. |
-| Old code is shown | The preview is one commit, fixed at deploy time. Deploy again after pushing, and destroy the old one. Check `deployment.commit`. |
+| Old code is shown | A preview doesn't follow its branch by itself. Push, then run `deployer update NAME --json`. Compare `deployment.commit` with `git rev-parse origin/BRANCH`. |
 | `Bad Request (400)` or `Invalid host header` | The framework rejects the preview host. Allow the preview domain (Django `ALLOWED_HOSTS`, Vite `preview.allowedHosts` or `server.allowedHosts`, Rails `config.hosts`). |
 | Redirect loops, or `http://` links | The app doesn't trust the proxy. Trust `X-Forwarded-Proto`: Express `app.set("trust proxy", true)`, Django `SECURE_PROXY_SSL_HEADER`. |
 | Client-side routes show 404 after a reload | The static server needs a fallback to `index.html`; see the Vite template in [recipes.md](recipes.md). |
 | Features that call external services fail | There's no outbound network at runtime. Use mocks or sample data. |
-| Data disappeared | Data lasts only as long as the deployment. A new deploy starts empty. |
+| Data disappeared | Data lasts only as long as the deployment's container. A new deploy, and an update, start with the image's files. |
 
 ## What visitors see
 

@@ -171,6 +171,19 @@ func TestDeploymentEndpoints(t *testing.T) {
 	}
 
 	var op domain.Operation
+	env.Source.Push("design/a")
+	r = call(t, env, admin, "POST", "/v1/deployments/design-a/update", domain.UpdateDeploymentRequest{})
+	r.decode(t, &op)
+	if r.status != 202 || op.Kind != domain.OpUpdateDeployment {
+		t.Fatalf("update: %d %+v", r.status, r.body.Error)
+	}
+	if op = waitOp(t, env, op.ID); op.Status != domain.OpSucceeded || !strings.Contains(string(op.Result), `"changed":true`) {
+		t.Fatalf("update result: %+v %s", op.Error, op.Result)
+	}
+	if r := call(t, env, admin, "POST", "/v1/deployments/design-a/update", map[string]any{"branch": "x"}); r.status != 400 {
+		t.Fatalf("unknown field accepted: %d", r.status)
+	}
+
 	call(t, env, admin, "POST", "/v1/deployments/design-a/stop", nil).decode(t, &op)
 	waitOp(t, env, op.ID)
 	if r := call(t, env, admin, "POST", "/v1/deployments/design-a/stop", nil); r.status != 409 || r.code() != domain.CodeInvalidState {

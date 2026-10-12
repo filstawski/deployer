@@ -205,6 +205,9 @@ func (d *Dispatcher) invoke(ctx context.Context, op domain.Operation) (any, erro
 	ctx, cancel := context.WithTimeout(ctx, remaining)
 	defer cancel()
 	result, err := h(ctx, op)
+	if e, ok := domain.AsError(err); ok && e.Code == domain.CodeTimeout {
+		return nil, e // The handler explained the timeout itself.
+	}
 	if errors.Is(err, context.DeadlineExceeded) || err != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		return nil, domain.Errorf(domain.CodeTimeout, "the operation did not finish before its deadline")
 	}

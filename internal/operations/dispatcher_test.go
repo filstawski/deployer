@@ -6,6 +6,8 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -97,7 +99,15 @@ func TestOrderingAndConcurrency(t *testing.T) {
 	waitFor(t, s, a2.ID, domain.OpSucceeded)
 	mu.Lock()
 	defer mu.Unlock()
-	if order[0] != "dep_a:"+a1.ID || order[2] != "dep_a:"+a2.ID {
+	// Different deployments run concurrently, in any order; one deployment's
+	// operations run in the order they were queued.
+	var forA []string
+	for _, entry := range order {
+		if strings.HasPrefix(entry, "dep_a:") {
+			forA = append(forA, entry)
+		}
+	}
+	if len(order) != 3 || !slices.Equal(forA, []string{"dep_a:" + a1.ID, "dep_a:" + a2.ID}) {
 		t.Fatalf("order: %v", order)
 	}
 }
@@ -200,5 +210,22 @@ func TestShutdownLeavesWorkForRecovery(t *testing.T) {
 	case <-done:
 		t.Fatal("handler ran beyond the attempt limit")
 	default:
+	}
+}
+
+// A handler that explains its own timeout, such as an update that restored
+// the previous version, keeps its message.
+func TestHandlerTimeoutMessage(t *testing.T) {
+	s, p := setup(t)
+	d := New(s, quiet, Options{PollInterval: 10 * time.Millisecond})
+	d.Handle(domain.OpUpdateDeployment, func(ctx context.Context, op domain.Operation) (any, error) {
+		<-ctx.Done()
+		return nil, domain.Errorf(domain.CodeTimeout, "out of time; the previous version still runs")
+	})
+	op := enqueue(t, s, p, domain.OpUpdateDeployment, "dep_a", 50*time.Millisecond)
+	start(t, d)
+	waitFor(t, s, op.ID, domain.OpFailed)
+	if got, _ := s.GetOperation(context.Background(), op.ID); got.Error.Message != "out of time; the previous version still runs" {
+		t.Fatalf("error: %+v", got.Error)
 	}
 }

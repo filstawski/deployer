@@ -2,6 +2,10 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"io/fs"
+	"os"
 	"time"
 
 	"github.com/filstawski/deployer/internal/domain"
@@ -138,7 +142,7 @@ func newOperation(tx *store.Tx, kind domain.OperationKind, actor, projectID, dep
 
 // Stop queues stopping a running deployment.
 func (c *Controller) Stop(ctx context.Context, actor, id, key string) (domain.Operation, error) {
-	return c.enqueue(ctx, actor, id, key, domain.OpStopDeployment, func(d domain.Deployment, pending []domain.Operation) (*domain.Operation, error) {
+	return c.enqueue(ctx, actor, id, key, domain.OpStopDeployment, nil, func(d domain.Deployment, pending []domain.Operation) (*domain.Operation, error) {
 		if len(pending) > 0 {
 			return nil, busy(d)
 		}
@@ -151,16 +155,41 @@ func (c *Controller) Stop(ctx context.Context, actor, id, key string) (domain.Op
 
 // Start queues starting a stopped or failed deployment from its built image.
 func (c *Controller) Start(ctx context.Context, actor, id, key string) (domain.Operation, error) {
-	return c.enqueue(ctx, actor, id, key, domain.OpStartDeployment, func(d domain.Deployment, pending []domain.Operation) (*domain.Operation, error) {
+	return c.enqueue(ctx, actor, id, key, domain.OpStartDeployment, nil, func(d domain.Deployment, pending []domain.Operation) (*domain.Operation, error) {
 		switch {
 		case len(pending) > 0:
 			return nil, busy(d)
 		case d.State == domain.StateRunning:
 			return nil, domain.Errorf(domain.CodeInvalidState, "%s is already running", d.Name)
 		case d.State == domain.StateExpired || d.ExpiredAt(c.store.Now()):
-			return nil, domain.Errorf(domain.CodeInvalidState, "%s has expired", d.Name).WithHint("extend it first: deployer extend %s --by 1d", d.Name)
+			return nil, expired(d)
 		case d.Image == "":
 			return nil, domain.Errorf(domain.CodeInvalidState, "%s was never built successfully", d.Name).WithHint("deploy again: deployer deploy --ref %s", d.Ref)
+		}
+		return nil, nil
+	})
+}
+
+// Update queues moving a deployment to the latest commit of its ref, or of
+// req.Ref, keeping its name, URL, and lifetime; see handleUpdate.
+func (c *Controller) Update(ctx context.Context, actor, id, key string, req domain.UpdateDeploymentRequest) (domain.Operation, error) {
+	if req.Ref != "" {
+		if err := domain.ValidateRef(req.Ref); err != nil {
+			return domain.Operation{}, err
+		}
+	}
+	return c.enqueue(ctx, actor, id, key, domain.OpUpdateDeployment, req, func(d domain.Deployment, pending []domain.Operation) (*domain.Operation, error) {
+		switch {
+		case len(pending) > 0:
+			return nil, busy(d)
+		case d.State == domain.StateExpired || d.ExpiredAt(c.store.Now()):
+			return nil, expired(d)
+		}
+		// Clear the previous build's log before the operation can run, so
+		// that whoever follows the new build reads only its output. A retried
+		// request never gets here.
+		if err := os.Truncate(c.buildLog(d.ID), 0); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			c.log.Warn("clear the build log", "deployment", d.ID, "error", err)
 		}
 		return nil, nil
 	})
@@ -170,7 +199,7 @@ func (c *Controller) Start(ctx context.Context, actor, id, key string) (domain.O
 // other queued or running operation of the deployment.
 func (c *Controller) Destroy(ctx context.Context, actor, id, key string) (domain.Operation, error) {
 	var running []string
-	op, err := c.enqueue(ctx, actor, id, key, domain.OpDestroyDeployment, func(d domain.Deployment, pending []domain.Operation) (*domain.Operation, error) {
+	op, err := c.enqueue(ctx, actor, id, key, domain.OpDestroyDeployment, nil, func(d domain.Deployment, pending []domain.Operation) (*domain.Operation, error) {
 		for i := range pending {
 			if pending[i].Kind == domain.OpDestroyDeployment {
 				return &pending[i], nil
@@ -197,8 +226,22 @@ func (c *Controller) Destroy(ctx context.Context, actor, id, key string) (domain
 // It may return an existing operation to reuse instead of creating one.
 type rule func(d domain.Deployment, pending []domain.Operation) (*domain.Operation, error)
 
-func (c *Controller) enqueue(ctx context.Context, actor, id, key string, kind domain.OperationKind, check rule) (domain.Operation, error) {
+// enqueue queues an operation on a deployment after check accepts it.
+// request, if not nil, holds the operation's parameters.
+func (c *Controller) enqueue(ctx context.Context, actor, id, key string, kind domain.OperationKind, request any, check rule) (domain.Operation, error) {
 	hash := store.RequestHash(kind, id)
+	var params json.RawMessage
+	if request != nil {
+		var err error
+		if params, err = json.Marshal(request); err != nil {
+			return domain.Operation{}, err
+		}
+		hash = store.RequestHash(kind, id, params)
+	}
+	timeout := 10 * time.Minute
+	if kind == domain.OpUpdateDeployment {
+		timeout = c.createDeadline()
+	}
 	var op domain.Operation
 	err := c.store.Tx(ctx, func(tx *store.Tx) error {
 		if opID, found, err := tx.Idempotent(actor, key, hash); found || err != nil {
@@ -231,7 +274,8 @@ func (c *Controller) enqueue(ctx context.Context, actor, id, key string, kind do
 				return err
 			}
 		}
-		op = newOperation(tx, kind, actor, d.ProjectID, d.ID, 10*time.Minute)
+		op = newOperation(tx, kind, actor, d.ProjectID, d.ID, timeout)
+		op.Request = params
 		d.OperationID = op.ID
 		if err := tx.InsertOperation(op); err != nil {
 			return err
