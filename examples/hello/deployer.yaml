@@ -1,0 +1,10 @@
+# Deployer recipe for the hello example. See docs/projects.md.
+version: 1
+source:
+  dockerfile: Dockerfile
+  context: .
+http:
+  port: 8080
+  healthcheck:
+    path: /health
+    timeout: 30s

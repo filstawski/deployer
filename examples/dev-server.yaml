@@ -1,0 +1,16 @@
+# Local development server: make dev (see docs/development.md).
+# State lives in .deployer/ at the repository root; previews are served at
+# http://NAME.localhost:8080 through the gateway image built by make gateway-image.
+version: 1
+domain: localhost
+state_dir: ../.deployer
+api:
+  listen: 127.0.0.1:7420
+gateway:
+  listen: 127.0.0.1:8080
+  control_listen: 127.0.0.1:7421
+  image: deployer-gateway:dev
+previews:
+  scheme: http
+deployments:
+  default_ttl: 4h

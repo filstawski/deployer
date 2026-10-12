@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/filstawski/deployer/main/schemas/deployer.schema.json",
+  "title": "Deployer project recipe (deployer.yaml)",
+  "description": "Describes how Deployer builds and runs a repository. See docs/projects.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "source", "http"],
+  "properties": {
+    "version": { "const": 1 },
+    "project": {
+      "type": "string",
+      "description": "Informational name; the server identifies projects by registration."
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dockerfile"],
+      "properties": {
+        "dockerfile": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Dockerfile path, relative to the repository root."
+        },
+        "context": {
+          "type": "string",
+          "default": ".",
+          "description": "Build context directory, relative to the repository root."
+        }
+      }
+    },
+    "http": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["port"],
+      "properties": {
+        "service": { "const": "web", "default": "web" },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Port the app listens on inside the container, on 0.0.0.0."
+        },
+        "healthcheck": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string",
+              "default": "/health",
+              "pattern": "^/(?!/)[^ #?]*$",
+              "description": "Path that returns a status below 400 once the app is ready."
+            },
+            "timeout": {
+              "type": "string",
+              "default": "90s",
+              "pattern": "^[0-9]+(ms|s|m)$|^[0-9]+m[0-9]+s$",
+              "description": "How long the app may take to become ready: 1s to 5m."
+            }
+          }
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "maxProperties": 100,
+      "propertyNames": { "pattern": "^(?!DEPLOYER_|PORT$)[A-Za-z_][A-Za-z0-9_]*$" },
+      "additionalProperties": { "type": "string" },
+      "description": "Plain environment variables. Do not put secrets here: the file is committed."
+    }
+  }
+}

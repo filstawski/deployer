@@ -1,0 +1,10 @@
+# Lets you deploy this repository itself: it builds the hello example.
+version: 1
+source:
+  dockerfile: examples/hello/Dockerfile
+  context: examples/hello
+http:
+  port: 8080
+  healthcheck:
+    path: /health
+    timeout: 30s
