@@ -70,9 +70,10 @@ func (a *app) projectCommand() *cobra.Command {
 	}
 
 	show := &cobra.Command{
-		Use:   "show NAME",
-		Short: "Show a project",
-		Args:  exactArgs(1, "NAME"),
+		Use:               "show NAME",
+		ValidArgsFunction: a.completeProjects,
+		Short:             "Show a project",
+		Args:              exactArgs(1, "NAME"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := a.client(cmd.Context())
 			if err != nil {
@@ -89,9 +90,10 @@ func (a *app) projectCommand() *cobra.Command {
 	}
 
 	verify := &cobra.Command{
-		Use:   "verify NAME",
-		Short: "Check that the server can read a project's repository",
-		Args:  exactArgs(1, "NAME"),
+		Use:               "verify NAME",
+		ValidArgsFunction: a.completeProjects,
+		Short:             "Check that the server can read a project's repository",
+		Args:              exactArgs(1, "NAME"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := a.client(cmd.Context())
 			if err != nil {
@@ -110,10 +112,11 @@ func (a *app) projectCommand() *cobra.Command {
 
 	var yes bool
 	remove := &cobra.Command{
-		Use:     "remove NAME",
-		Aliases: []string{"rm"},
-		Short:   "Unregister a project without live deployments",
-		Args:    exactArgs(1, "NAME"),
+		Use:               "remove NAME",
+		ValidArgsFunction: a.completeProjects,
+		Aliases:           []string{"rm"},
+		Short:             "Unregister a project without live deployments",
+		Args:              exactArgs(1, "NAME"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !yes {
 				return usage("removing a project deletes its history; pass --yes")

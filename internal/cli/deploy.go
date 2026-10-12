@@ -37,7 +37,8 @@ app passes its health check. Its lifetime starts at that point.`,
 		Example: `  deployer deploy
   deployer deploy --ref design/a --name design-a --ttl 3d
   deployer deploy shop --ref main --detach --json`,
-		Args: maxArgs(1),
+		Args:              maxArgs(1),
+		ValidArgsFunction: a.completeProjects,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			c, err := a.client(ctx)
@@ -132,6 +133,8 @@ app passes its health check. Its lifetime starts at that point.`,
 	f.BoolVarP(&follow, "follow", "f", false, "stream build output while waiting")
 	f.DurationVar(&timeout, "timeout", 30*time.Minute, "how long to wait; the deployment continues if the wait ends")
 	f.StringVar(&key, "idempotency-key", "", "retrying with the same key returns the same deployment")
+	cmd.RegisterFlagCompletionFunc("ref", a.completeBranches)
+	cmd.RegisterFlagCompletionFunc("ttl", completeFixed("1h", "4h", "1d", "3d", "7d", "30d"))
 	return cmd
 }
 
@@ -298,33 +301,13 @@ func suggestName(project, branch string, taken map[string]bool) string {
 	return name
 }
 
-// lifetimeOptions offers lifetimes up to the server's maximum, and returns
-// the server default's value.
+// lifetimeOptions offers lifetimes up to the server's maximum, marking the
+// default and the maximum, and returns the default's value.
 func lifetimeOptions(s domain.DeploymentsStatus) ([]Option, string) {
 	def := time.Duration(s.DefaultTTL) * time.Second
 	limit := time.Duration(s.MaxTTL) * time.Second
-	var options []Option
-	added := false
-	for _, o := range durations {
-		if !added && def <= o.d {
-			if def != o.d {
-				options = append(options, Option{Label: domain.FormatDuration(def) + " (default)", Value: strconv.FormatInt(s.DefaultTTL, 10)})
-			}
-			added = true
-		}
-		if o.d > limit {
-			break
-		}
-		label := o.label
-		if o.d == def {
-			label += " (default)"
-		}
-		options = append(options, Option{Label: label, Value: strconv.FormatInt(int64(o.d.Seconds()), 10)})
-	}
-	if !added {
-		options = append(options, Option{Label: domain.FormatDuration(def) + " (default)", Value: strconv.FormatInt(s.DefaultTTL, 10)})
-	}
-	return options, strconv.FormatInt(s.DefaultTTL, 10)
+	marks := map[time.Duration]string{limit: "maximum", def: "default"}
+	return durationOptions(limit, marks), strconv.FormatInt(s.DefaultTTL, 10)
 }
 
 // warnLocalChanges points out local work that deploying ref won't include,

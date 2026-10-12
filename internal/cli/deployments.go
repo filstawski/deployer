@@ -3,7 +3,9 @@ package cli
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/filstawski/deployer/internal/client"
@@ -57,6 +59,7 @@ func (a *app) listCommand() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&project, "project", "p", "", "only this project")
 	cmd.Flags().BoolVarP(&all, "all", "a", false, "include destroyed deployments")
+	cmd.RegisterFlagCompletionFunc("project", a.completeProjects)
 	return cmd
 }
 
@@ -65,10 +68,11 @@ func live(d domain.Deployment) bool { return d.State.Live() }
 
 func (a *app) inspectCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:     "inspect [NAME]",
-		Aliases: []string{"show"},
-		Short:   "Show a deployment's details",
-		Args:    maxArgs(1),
+		Use:               "inspect [NAME]",
+		Aliases:           []string{"show"},
+		Short:             "Show a deployment's details",
+		Args:              maxArgs(1),
+		ValidArgsFunction: a.completeDeployments(nil),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := a.needsName(args, "inspect"); err != nil {
 				return err
@@ -135,8 +139,9 @@ func (a *app) logsCommand() *cobra.Command {
 	var build, follow bool
 	var lines int
 	cmd := &cobra.Command{
-		Use:   "logs [NAME]",
-		Short: "Show a deployment's app or build output",
+		Use:               "logs [NAME]",
+		Short:             "Show a deployment's app or build output",
+		ValidArgsFunction: a.completeDeployments(live),
 		Example: `  deployer logs design-a
   deployer logs design-a --build --follow`,
 		Args: maxArgs(1),
@@ -200,9 +205,10 @@ func (a *app) followBuild(ctx context.Context, c *client.Client, ref string) err
 
 func (a *app) openCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "open [NAME]",
-		Short: "Open a deployment in the browser",
-		Args:  maxArgs(1),
+		Use:               "open [NAME]",
+		Short:             "Open a deployment in the browser",
+		Args:              maxArgs(1),
+		ValidArgsFunction: a.completeDeployments(live),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := a.needsName(args, "open"); err != nil {
 				return err
@@ -245,10 +251,11 @@ func (a *app) lifecycleCommand(l lifecycle) *cobra.Command {
 	var detach, yes bool
 	var timeout time.Duration
 	cmd := &cobra.Command{
-		Use:   l.use + " [NAME]",
-		Short: l.short,
-		Long:  l.long,
-		Args:  maxArgs(1),
+		Use:               l.use + " [NAME]",
+		Short:             l.short,
+		Long:              l.long,
+		Args:              maxArgs(1),
+		ValidArgsFunction: a.completeDeployments(l.keep),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			if err := a.needsName(args, l.use); err != nil {
@@ -341,11 +348,54 @@ func (a *app) confirmDestroy(ctx context.Context, c *client.Client, ref string) 
 	return nil
 }
 
-// durations are the lifetimes offered in prompts.
-var durations = []struct {
-	label string
-	d     time.Duration
-}{{"1 hour", time.Hour}, {"4 hours", 4 * time.Hour}, {"1 day", 24 * time.Hour}, {"3 days", 72 * time.Hour}, {"1 week", 168 * time.Hour}}
+// durations are the common lifetimes offered in prompts, as far as the
+// server's maximum allows.
+var durations = []time.Duration{time.Hour, 4 * time.Hour, 24 * time.Hour, 72 * time.Hour, 168 * time.Hour, 336 * time.Hour, 720 * time.Hour}
+
+// durationLabel names a duration for people: "4 hours", "3 days", "2 weeks".
+func durationLabel(d time.Duration) string {
+	unit := func(n time.Duration, name string) string {
+		if n == 1 {
+			return "1 " + name
+		}
+		return fmt.Sprintf("%d %ss", n, name)
+	}
+	const day, week = 24 * time.Hour, 7 * 24 * time.Hour
+	switch {
+	case d%week == 0 && d/week <= 4:
+		return unit(d/week, "week")
+	case d%day == 0:
+		return unit(d/day, "day")
+	case d%time.Hour == 0:
+		return unit(d/time.Hour, "hour")
+	default:
+		return domain.FormatDuration(d)
+	}
+}
+
+// durationOptions offers the common durations up to limit, in order, plus
+// the durations in marks, labeled with their mark. Values are seconds.
+func durationOptions(limit time.Duration, marks map[time.Duration]string) []Option {
+	set := map[time.Duration]bool{}
+	for d := range marks {
+		set[d] = true
+	}
+	for _, d := range durations {
+		if d <= limit {
+			set[d] = true
+		}
+	}
+	sorted := slices.Sorted(maps.Keys(set))
+	options := make([]Option, 0, len(sorted))
+	for _, d := range sorted {
+		label := durationLabel(d)
+		if mark := marks[d]; mark != "" {
+			label += " (" + mark + ")"
+		}
+		options = append(options, Option{Label: label, Value: strconv.FormatInt(int64(d.Seconds()), 10)})
+	}
+	return options
+}
 
 func (a *app) extendCommand() *cobra.Command {
 	var by string
@@ -354,8 +404,9 @@ func (a *app) extendCommand() *cobra.Command {
 		Short: "Lengthen a deployment's lifetime",
 		Long: `Lengthen a deployment's lifetime. An expired deployment that has not been
 removed yet gets a new lifetime starting now; start it again with deployer start.`,
-		Example: "  deployer extend design-a --by 2d",
-		Args:    maxArgs(1),
+		Example:           "  deployer extend design-a --by 2d",
+		Args:              maxArgs(1),
+		ValidArgsFunction: a.completeDeployments(live),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			if by == "" && !a.canPrompt() {
@@ -380,15 +431,9 @@ removed yet gets a new lifetime starting now; start it again with deployer start
 				return err
 			}
 			if by == "" {
-				options := make([]Option, len(durations))
-				for n, o := range durations {
-					options[n] = Option{Label: o.label, Value: o.d.String()}
-				}
-				choice := (24 * time.Hour).String()
-				if err := a.ask(Field{Title: "Extend " + ref + " by how long?", Options: options, Value: &choice}); err != nil {
+				if dur, err = a.askExtension(ctx, c, ref); err != nil {
 					return err
 				}
-				dur, _ = time.ParseDuration(choice)
 			}
 			d, err := c.Extend(ctx, ref, dur)
 			if err != nil {
@@ -408,7 +453,43 @@ removed yet gets a new lifetime starting now; start it again with deployer start
 		},
 	}
 	cmd.Flags().StringVar(&by, "by", "", "how much longer, such as 4h or 2d")
+	cmd.RegisterFlagCompletionFunc("by", completeFixed("1h", "4h", "1d", "3d", "7d", "30d"))
 	return cmd
+}
+
+// askExtension offers extensions up to what the server's maximum lifetime
+// still allows for the deployment.
+func (a *app) askExtension(ctx context.Context, c *client.Client, ref string) (time.Duration, error) {
+	status, err := c.Status(ctx)
+	if err != nil {
+		return 0, err
+	}
+	d, err := c.Deployment(ctx, ref)
+	if err != nil {
+		return 0, err
+	}
+	limit := time.Duration(status.Deployments.MaxTTL) * time.Second
+	headroom := limit - d.TTL()
+	if d.ExpiresAt != nil {
+		headroom = limit - max(time.Until(*d.ExpiresAt), 0)
+	}
+	headroom = headroom.Truncate(time.Minute)
+	if headroom < time.Minute {
+		return 0, domain.Errorf(domain.CodeInvalidInput, "%s already has the longest lifetime this server allows (%s)", d.Name, domain.FormatDuration(limit)).
+			WithHint("an administrator can raise deployments.max_ttl in /etc/deployer/server.yaml")
+	}
+	options := durationOptions(headroom, map[time.Duration]string{headroom: "as long as allowed"})
+	choice := options[len(options)-1].Value
+	for _, o := range options {
+		if o.Value == "86400" {
+			choice = o.Value
+		}
+	}
+	if err := a.ask(Field{Title: "Extend " + d.Name + " by how long?", Options: options, Value: &choice}); err != nil {
+		return 0, err
+	}
+	seconds, _ := strconv.ParseInt(choice, 10, 64)
+	return time.Duration(seconds) * time.Second, nil
 }
 
 func (a *app) operationCommand() *cobra.Command {

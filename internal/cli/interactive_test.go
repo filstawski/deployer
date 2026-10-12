@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -133,7 +134,7 @@ func TestPickersAndConfirmation(t *testing.T) {
 		t.Fatalf("confirmed destroy: %d asked %v %s", r.code, p.asked, r.stderr)
 	}
 
-	p = &fakePrompter{t: t, answers: map[string]string{"Extend alpha by how long?": "4h0m0s"}}
+	p = &fakePrompter{t: t, answers: map[string]string{"Extend alpha by how long?": "14400"}}
 	if r := h.interactive(p, "extend", "alpha"); r.code != 0 || !strings.Contains(r.stdout, "now expires") {
 		t.Fatalf("extend prompt: %d %s %s", r.code, r.stdout, r.stderr)
 	}
@@ -184,8 +185,16 @@ func TestPanelLayout(t *testing.T) {
 	}
 	opts, def := lifetimeOptions(domain.DeploymentsStatus{DefaultTTL: 7200, MaxTTL: 86400})
 	labels := fmt.Sprint(opts)
-	if def != "7200" || !strings.Contains(labels, "2h (default)") || strings.Contains(labels, "1 week") {
+	if def != "7200" || !strings.Contains(labels, "{1 hour 3600} {2 hours (default) 7200} {4 hours 14400} {1 day (maximum) 86400}") {
 		t.Fatalf("lifetime options: %v %s", opts, def)
+	}
+	// Longer lifetimes are offered when the server allows them.
+	opts, _ = lifetimeOptions(domain.DeploymentsStatus{DefaultTTL: 86400, MaxTTL: 30 * 86400})
+	if labels := fmt.Sprint(opts); !strings.Contains(labels, "1 day (default)") || !strings.Contains(labels, "2 weeks") || !strings.Contains(labels, "30 days (maximum)") {
+		t.Fatalf("30-day options: %v", opts)
+	}
+	if got := durationLabel(45 * 24 * time.Hour); got != "45 days" {
+		t.Fatal(got)
 	}
 }
 
@@ -200,5 +209,27 @@ func assertBox(t *testing.T, out string) {
 	}
 	if !strings.HasPrefix(lines[0], "╭") || !strings.HasPrefix(lines[len(lines)-1], "╰") {
 		t.Fatalf("not a box:\n%s", out)
+	}
+}
+
+func TestCompletion(t *testing.T) {
+	h := newHarness(t)
+	h.login()
+	h.ok("project", "add", "shop", "--repo", "https://github.com/acme/shop")
+	h.ok("deploy", "shop", "--ref", "main", "--name", "alpha")
+	h.ok("deploy", "shop", "--ref", "main", "--name", "beta")
+	h.ok("stop", "beta")
+	r := h.ok("__complete", "stop", "")
+	if !strings.Contains(r.stdout, "alpha\trunning · main") || strings.Contains(r.stdout, "beta") {
+		t.Fatalf("stop completions:\n%s", r.stdout)
+	}
+	if r := h.ok("__complete", "deploy", ""); !strings.Contains(r.stdout, "shop\thttps://github.com/acme/shop.git") {
+		t.Fatalf("project completions:\n%s", r.stdout)
+	}
+	if r := h.ok("__complete", "token", "create", "x", "--role", ""); !strings.Contains(r.stdout, "deployer") {
+		t.Fatalf("role completions:\n%s", r.stdout)
+	}
+	if r := h.ok("completion", "zsh"); !strings.Contains(r.stdout, "#compdef deployer") {
+		t.Fatal("no zsh completion script")
 	}
 }

@@ -25,7 +25,8 @@ func (c *Controller) Deploy(ctx context.Context, actor string, project domain.Pr
 	case req.TTLSeconds == 0:
 		ttl = limits.DefaultTTL.D()
 	case ttl < time.Minute || ttl > limits.MaxTTL.D():
-		return resp, domain.Errorf(domain.CodeInvalidInput, "lifetime must be between 1m and %s", domain.FormatDuration(limits.MaxTTL.D()))
+		return resp, domain.Errorf(domain.CodeInvalidInput, "lifetime must be between 1m and %s", domain.FormatDuration(limits.MaxTTL.D())).
+			WithHint("an administrator can raise deployments.max_ttl in /etc/deployer/server.yaml")
 	}
 	if req.Name != "" {
 		if err := domain.ValidateDeploymentName(req.Name); err != nil {
@@ -269,7 +270,8 @@ func (c *Controller) Extend(ctx context.Context, actor, id string, by time.Durat
 			return domain.Errorf(domain.CodeInvalidState, "%s has been destroyed", d.Name)
 		case d.ExpiresAt == nil:
 			if d.TTL()+by > limit {
-				return domain.Errorf(domain.CodeInvalidInput, "lifetime cannot exceed %s", domain.FormatDuration(limit))
+				return domain.Errorf(domain.CodeInvalidInput, "lifetime cannot exceed %s", domain.FormatDuration(limit)).
+					WithHint("an administrator can raise deployments.max_ttl in /etc/deployer/server.yaml")
 			}
 			d.TTLSeconds += int64(by.Seconds())
 			return nil
@@ -282,7 +284,8 @@ func (c *Controller) Extend(ctx context.Context, actor, id string, by time.Durat
 			}
 		}
 		if next.Sub(now) > limit {
-			return domain.Errorf(domain.CodeInvalidInput, "a deployment can be extended to at most %s from now", domain.FormatDuration(limit))
+			return domain.Errorf(domain.CodeInvalidInput, "a deployment can be extended to at most %s from now", domain.FormatDuration(limit)).
+				WithHint("an administrator can raise deployments.max_ttl in /etc/deployer/server.yaml")
 		}
 		purge := next.Add(c.cfg.Deployments.Retention.D())
 		d.ExpiresAt, d.PurgeAt = &next, &purge

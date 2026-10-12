@@ -85,6 +85,8 @@ Roles:
 	f.StringSliceVarP(&projects, "project", "p", nil, "limit the token to these projects (default: all)")
 	f.StringVar(&ttl, "ttl", "90d", `lifetime, such as 30d, or "never"`)
 	f.StringVarP(&output, "output", "o", "", "write the secret to this new file instead of printing it")
+	create.RegisterFlagCompletionFunc("role", completeFixed(domain.RoleNames()...))
+	create.RegisterFlagCompletionFunc("project", a.completeProjects)
 
 	list := &cobra.Command{
 		Use:     "list",

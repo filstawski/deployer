@@ -253,9 +253,30 @@ of creating another one. Reusing a key for a different request fails with
 
 ### Shell completion
 
+Completion fills in commands, flags, deployment and project names, and your
+pushed branches for `--ref`. Names come from the server, so you need to be
+logged in.
+
+**zsh**, the default on macOS:
+
 ```sh
-deployer completion zsh > "${fpath[1]}/_deployer"     # also bash, fish, powershell
+echo 'source <(deployer completion zsh)' >> ~/.zshrc
 ```
+
+If zsh completion isn't enabled yet, add `autoload -Uz compinit && compinit`
+above that line. Frameworks such as Oh My Zsh already do this.
+
+**bash**, common on Linux servers, needs the `bash-completion` package
+(`apt install bash-completion`):
+
+```sh
+deployer completion bash > /etc/bash_completion.d/deployer    # for all users, as root
+echo 'source <(deployer completion bash)' >> ~/.bashrc          # or just for you
+```
+
+**fish**: `deployer completion fish > ~/.config/fish/completions/deployer.fish`
+
+Open a new terminal afterwards. `echo $SHELL` shows which shell you use.
 
 ## Upgrading
 

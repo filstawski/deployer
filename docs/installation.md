@@ -226,6 +226,17 @@ deployments:
 
 Durations accept `m`, `h`, `d`, and `w` units, such as `90m`, `12h`, or `2w`.
 
+For example, to allow previews that live up to 30 days:
+
+```yaml
+deployments:
+  max_ttl: 30d
+```
+
+Edits to `server.yaml` survive upgrades. `deployer status` shows the lifetime
+limits in effect, and the deploy form and `deployer extend` offer choices up to
+the maximum.
+
 ## What is installed where
 
 | Path | Contents |
