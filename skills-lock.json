@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "skills": {
+    "code-polish": {
+      "source": "filstawski/playbook",
+      "sourceType": "github",
+      "skillPath": "skills/code-polish/SKILL.md",
+      "computedHash": "adfdd0b1cfeb748e6e84c386268d213c4ba2faef9451e20eec2827209377e3df"
+    },
+    "docs-agent-handoff-spec": {
+      "source": "filstawski/playbook",
+      "sourceType": "github",
+      "skillPath": "skills/docs/docs-agent-handoff-spec/SKILL.md",
+      "computedHash": "7f37f04d92a8054c8f344c78d9ad97604e89706704fd6caf78be9570737e6d04"
+    },
+    "docs-feature-planning-spec": {
+      "source": "filstawski/playbook",
+      "sourceType": "github",
+      "skillPath": "skills/docs/docs-feature-planning-spec/SKILL.md",
+      "computedHash": "7eaeecf5e36ba3f9571b6622ea036e411c85967c2e1a7e65ab98f114d15d39d4"
+    },
+    "docs-informal-to-formal-guidelines": {
+      "source": "filstawski/playbook",
+      "sourceType": "github",
+      "skillPath": "skills/docs/docs-informal-to-formal-guidelines/SKILL.md",
+      "computedHash": "b432478b81f36a59aaafbb3e629bad4b136bfe92f8963f440cba4d2bb7241707"
+    },
+    "docs-migration-status-tracking": {
+      "source": "filstawski/playbook",
+      "sourceType": "github",
+      "skillPath": "skills/docs/docs-migration-status-tracking/SKILL.md",
+      "computedHash": "ead5519ca269ff4199a9c983631878e7db37c87585aa59e6ff37f9f2981439db"
+    },
+    "docs-roadmap-notes": {
+      "source": "filstawski/playbook",
+      "sourceType": "github",
+      "skillPath": "skills/docs/docs-roadmap-notes/SKILL.md",
+      "computedHash": "c2740f1f8f2764dc43d225b4587d87072b41d3c1e3a643ddc6829812b62cb983"
+    },
+    "extract-reusable-primitives": {
+      "source": "filstawski/playbook",
+      "sourceType": "github",
+      "skillPath": "skills/extract-reusable-primitives/SKILL.md",
+      "computedHash": "1961f8aa0d5b430a2ad324ad34ab9b3b59df7bd1246478e313aff358a9bf651c"
+    },
+    "git-commit-messages": {
+      "source": "filstawski/playbook",
+      "sourceType": "github",
+      "skillPath": "skills/git/git-commit-messages/SKILL.md",
+      "computedHash": "b50f14dc281d2745f4d4baef4b88d7422a9bd3a7210aa48728813afaddae7e52"
+    },
+    "git-commit-requires-approval": {
+      "source": "filstawski/playbook",
+      "sourceType": "github",
+      "skillPath": "skills/git/git-commit-requires-approval/SKILL.md",
+      "computedHash": "a6279a61e459a8e0a3dab37ff16c7f20c59f8dfe7f5915f8dccb282b2aa3f7e3"
+    },
+    "same-import-upgrade-path": {
+      "source": "filstawski/playbook",
+      "sourceType": "github",
+      "skillPath": "skills/same-import-upgrade-path/SKILL.md",
+      "computedHash": "7e1b4666b6c8c98d3c86d23ab10fa95f94842fd2ffb50ec8f1c7a80ca677421c"
+    }
+  }
+}
