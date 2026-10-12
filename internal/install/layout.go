@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // Host paths. They are rooted under Installer.root in tests.
@@ -52,11 +53,13 @@ type Installer struct {
 	log  io.Writer
 	// ready waits until the installed service answers.
 	ready func(ctx context.Context, apiURL string) error
+	// watchInterval is how often a starting service is checked for crashes.
+	watchInterval time.Duration
 }
 
 // New returns an installer for this host. Progress is written to log.
 func New(log io.Writer) *Installer {
-	return &Installer{sys: hostSystem{}, log: log, ready: waitReady}
+	return &Installer{sys: hostSystem{}, log: log, ready: waitReady, watchInterval: 2 * time.Second}
 }
 
 func (i *Installer) path(p string) string { return filepath.Join(i.root, p) }

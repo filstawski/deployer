@@ -9,6 +9,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 	"math/big"
 	"os"
@@ -26,6 +27,8 @@ type fakeSystem struct {
 	versions map[string]string // deployerd path -> version
 	fail     map[string]error  // command prefix -> error
 	notRoot  bool
+	crashing bool // systemd keeps restarting the service
+	restarts int
 }
 
 func (f *fakeSystem) Run(_ context.Context, name string, args ...string) (string, error) {
@@ -47,6 +50,11 @@ func (f *fakeSystem) Run(_ context.Context, name string, args ...string) (string
 		f.users[args[len(args)-1]] = true
 	case strings.HasSuffix(name, "deployerd") && args[0] == "version":
 		return f.versions[name] + "\n", nil
+	case name == "systemctl" && args[0] == "show" && f.crashing:
+		f.restarts++
+		return fmt.Sprintf("%d\n", f.restarts), nil
+	case name == "journalctl":
+		return "deployerd: start gateway container: permission denied\n", nil
 	}
 	return "", nil
 }
@@ -79,8 +87,12 @@ type fixture struct {
 
 func newFixture(t *testing.T) *fixture {
 	f := &fixture{t: t, root: t.TempDir(), sys: &fakeSystem{users: map[string]bool{}, versions: map[string]string{}, fail: map[string]error{}}}
-	f.inst = &Installer{sys: f.sys, root: f.root, log: io.Discard, ready: func(_ context.Context, url string) error {
+	f.inst = &Installer{sys: f.sys, root: f.root, log: io.Discard, watchInterval: 5 * time.Millisecond, ready: func(ctx context.Context, url string) error {
 		f.readyURL = url
+		if f.sys.crashing {
+			<-ctx.Done()
+			return ctx.Err()
+		}
 		if f.current() == f.failVersion {
 			return errors.New("connection refused")
 		}
@@ -165,7 +177,7 @@ func TestInstallUpgradeUninstall(t *testing.T) {
 	if res.Status != "installed" || res.API != "https://api.previews.example.com" || f.current() != "v1.0.0" {
 		t.Fatalf("install: %+v current=%s", res, f.current())
 	}
-	for _, want := range []string{"useradd --system", "usermod --append --groups docker deployer", "systemctl enable --now deployer.service", "nginx -t", "systemctl reload nginx"} {
+	for _, want := range []string{"useradd --system", "usermod --append --groups docker deployer", "systemctl restart deployer.service", "nginx -t", "systemctl reload nginx"} {
 		if !f.sys.ran(want) {
 			t.Errorf("did not run %q", want)
 		}
@@ -318,5 +330,37 @@ func TestSettingsComeFromServerConfig(t *testing.T) {
 	o.Domain, o.APIPort = "previews.example.com", 7500
 	if _, err := f.inst.Install(ctx, o); err != nil {
 		t.Fatalf("reinstall with the kept settings: %v", err)
+	}
+}
+
+func TestCrashLoopFailsFastAndCanBeRetried(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	f.sys.crashing = true
+	start := time.Now()
+	_, err := f.inst.Install(ctx, options(f.bundle("v1.0.0")))
+	if err == nil || !strings.Contains(err.Error(), "keeps crashing") || !strings.Contains(err.Error(), "permission denied") {
+		t.Fatalf("crash loop: %v", err)
+	}
+	if time.Since(start) > 5*time.Second {
+		t.Fatal("waited for the full timeout instead of noticing the crash loop")
+	}
+
+	// A fixed release completes the failed installation, and restarts the
+	// crash-looping service onto it.
+	f.sys.crashing = false
+	o := options(f.bundle("v1.0.1"))
+	o.Version = "v1.0.1"
+	if res, err := f.inst.Install(ctx, o); err != nil || res.Status != "installed" || f.current() != "v1.0.1" {
+		t.Fatalf("retry with a fixed release: %+v %v", res, err)
+	}
+	if !f.sys.ran("systemctl restart deployer.service") {
+		t.Fatal("service not restarted onto the new release")
+	}
+	// Once installed, changing versions requires an upgrade.
+	o2 := options(f.bundle("v1.0.2"))
+	o2.Version = "v1.0.2"
+	if _, err := f.inst.Install(ctx, o2); err == nil || !strings.Contains(err.Error(), "upgrade") {
+		t.Fatalf("install over a completed installation: %v", err)
 	}
 }

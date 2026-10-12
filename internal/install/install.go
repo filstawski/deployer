@@ -124,7 +124,8 @@ func (i *Installer) Install(ctx context.Context, o Options) (Result, error) {
 	reinstall := receipt != nil && receipt.Status == "uninstalled"
 	if receipt != nil && !reinstall {
 		switch {
-		case receipt.Version != o.Version:
+		// A failed installation may be retried with a newer release.
+		case receipt.Version != o.Version && receipt.Status == "installed":
 			return Result{}, fmt.Errorf("Deployer %s is installed; use deployer server upgrade to change versions", receipt.Version)
 		case receipt.Options.Domain != o.Domain || receipt.Options.APIPort != o.APIPort ||
 			receipt.Options.GatewayPort != o.GatewayPort || receipt.Options.ControlPort != o.ControlPort:
@@ -183,7 +184,12 @@ func (i *Installer) Install(ctx context.Context, o Options) (Result, error) {
 	if err := i.writeUnit(ctx); err != nil {
 		return Result{}, err
 	}
-	if _, err := i.run(ctx, "systemctl", "enable", "--now", Service); err != nil {
+	// Restart rather than start, so that a service left crash-looping by an
+	// earlier attempt runs the release just installed.
+	if _, err := i.run(ctx, "systemctl", "enable", Service); err != nil {
+		return Result{}, err
+	}
+	if _, err := i.run(ctx, "systemctl", "restart", Service); err != nil {
 		return Result{}, err
 	}
 	if err := i.waitService(ctx, o); err != nil {
@@ -317,10 +323,55 @@ func (i *Installer) waitService(ctx context.Context, o Options) error {
 	i.step("Waiting for Deployer to start (a new release builds its gateway image first)")
 	ctx, cancel := context.WithTimeout(ctx, 6*time.Minute)
 	defer cancel()
-	if err := i.ready(ctx, fmt.Sprintf("http://127.0.0.1:%d", o.APIPort)); err != nil {
-		return fmt.Errorf("Deployer did not start: %w; see journalctl -u %s", err, Service)
+	// Stop waiting as soon as systemd has restarted a crashing service a few
+	// times, rather than letting the full timeout run out.
+	crashing := make(chan struct{})
+	go func() {
+		first := i.restarts(ctx)
+		tick := time.NewTicker(i.watchInterval)
+		defer tick.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-tick.C:
+				if n := i.restarts(ctx); first >= 0 && n-first >= 3 {
+					close(crashing)
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	err := i.ready(ctx, fmt.Sprintf("http://127.0.0.1:%d", o.APIPort))
+	select {
+	case <-crashing:
+		err = fmt.Errorf("the service keeps crashing")
+	default:
 	}
-	return nil
+	if err == nil {
+		return nil
+	}
+	logs, _ := i.sys.Run(context.WithoutCancel(ctx), "journalctl", "--unit", Service, "--lines", "12", "--no-pager", "--output", "cat")
+	return fmt.Errorf("Deployer did not start: %w\n\nLast lines of its log:\n%s\nFull log: journalctl -u %s", err, indent(logs), Service)
+}
+
+// restarts returns how often systemd has restarted the service, or -1.
+func (i *Installer) restarts(ctx context.Context) int {
+	out, err := i.sys.Run(ctx, "systemctl", "show", "--property", "NRestarts", "--value", Service)
+	n, convErr := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil || convErr != nil {
+		return -1
+	}
+	return n
+}
+
+func indent(s string) string {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	for n := range lines {
+		lines[n] = "  " + lines[n]
+	}
+	return strings.Join(lines, "\n") + "\n"
 }
 
 // liveOptions returns o with the domain and ports from server.yaml, which
