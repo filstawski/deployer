@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -83,6 +84,9 @@ func TestEndToEnd(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
+	// Run with the systemd service's umask, so files Deployer creates get the
+	// same permissions as on a real server.
+	defer syscall.Umask(syscall.Umask(0o077))
 	root, _ := filepath.Abs("../..")
 	arch := run(t, nil, "docker", "version", "--format", "{{.Server.Arch}}")
 
@@ -91,9 +95,14 @@ func TestEndToEnd(t *testing.T) {
 	goEnv := []string{"GOOS=linux", "GOARCH=" + arch, "CGO_ENABLED=0"}
 	run(t, goEnv, "go", "build", "-C", root, "-o", filepath.Join(build, "deployerd"), "./cmd/deployerd")
 	run(t, goEnv, "go", "build", "-C", root, "-o", filepath.Join(build, "hello"), "./examples/hello")
-	os.WriteFile(filepath.Join(build, "Dockerfile"), []byte(docker.GatewayDockerfile), 0o644)
+	gatewayBinary, err := os.ReadFile(filepath.Join(build, "deployerd"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	gatewayImage := "deployer-gateway:e2e-" + domain.RandomString(6)
-	run(t, nil, "docker", "build", "--quiet", "--tag", gatewayImage, build)
+	if err := docker.BuildGatewayImage(ctx, gatewayBinary, build, gatewayImage); err != nil {
+		t.Fatal(err)
+	}
 	defer exec.Command("docker", "image", "rm", "--force", gatewayImage).Run()
 	hello, err := os.ReadFile(filepath.Join(build, "hello"))
 	if err != nil {
@@ -113,14 +122,12 @@ func TestEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	serveCtx, stopServe := context.WithCancel(ctx)
-	served := make(chan error, 1)
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
-	go func() { served <- Serve(serveCtx, cfg, log) }()
+	current := start(ctx, cfg, log)
 	defer func() {
-		stopServe()
-		if err := <-served; err != nil {
-			t.Errorf("Serve: %v", err)
+		current.stop()
+		if current.err != nil {
+			t.Errorf("Serve: %v", current.err)
 		}
 		st, err := store.Open(cfg.DatabasePath())
 		if err == nil {
@@ -132,7 +139,7 @@ func TestEndToEnd(t *testing.T) {
 		}
 	}()
 
-	token := waitForToken(t, ctx, cfg, served)
+	token := waitForToken(t, ctx, cfg, current)
 	deployer := func(args ...string) string {
 		t.Helper()
 		var out, errOut bytes.Buffer
@@ -227,27 +234,46 @@ func TestEndToEnd(t *testing.T) {
 	t.Log("verified progress pages, routing, isolation, logs, stop/start, extend, and destroy")
 
 	// A controller restart keeps serving existing previews.
-	stopServe()
-	if err := <-served; err != nil {
-		t.Fatalf("Serve: %v", err)
+	current.stop()
+	if current.err != nil {
+		t.Fatalf("Serve: %v", current.err)
 	}
-	serveCtx, stopServe = context.WithCancel(ctx)
-	defer stopServe()
-	go func() { served <- Serve(serveCtx, cfg, log) }()
-	waitForToken(t, ctx, cfg, served)
+	current = start(ctx, cfg, log)
+	waitForToken(t, ctx, cfg, current)
 	if code, _ := visit("alpha.e2e.localhost", "/after-restart"); code != 200 {
 		t.Fatalf("after controller restart: %d", code)
 	}
 	deployer("destroy", "alpha", "--yes")
 }
 
-func waitForToken(t *testing.T, ctx context.Context, cfg config.Server, served <-chan error) string {
+// server is a controller running in the test process.
+type server struct {
+	cancel context.CancelFunc
+	done   chan struct{}
+	err    error
+}
+
+func start(ctx context.Context, cfg config.Server, log *slog.Logger) *server {
+	ctx, cancel := context.WithCancel(ctx)
+	s := &server{cancel: cancel, done: make(chan struct{})}
+	go func() { s.err = Serve(ctx, cfg, log); close(s.done) }()
+	return s
+}
+
+// stop cancels the controller and waits for it to exit. It is safe to call
+// more than once.
+func (s *server) stop() {
+	s.cancel()
+	<-s.done
+}
+
+func waitForToken(t *testing.T, ctx context.Context, cfg config.Server, s *server) string {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Minute)
 	for time.Now().Before(deadline) {
 		select {
-		case err := <-served:
-			t.Fatalf("Serve exited: %v", err)
+		case <-s.done:
+			t.Fatalf("Serve exited: %v", s.err)
 		default:
 		}
 		if token, err := secretfile.ReadToken(cfg.AdminTokenPath()); err == nil {

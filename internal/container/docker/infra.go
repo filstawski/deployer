@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/filstawski/deployer/internal/domain"
+	"github.com/filstawski/deployer/internal/execx"
 	"github.com/filstawski/deployer/internal/gateway"
 	"github.com/filstawski/deployer/internal/secretfile"
 )
@@ -151,25 +152,57 @@ func (d *Docker) buildGatewayImage(ctx context.Context, daemonArch string) (stri
 	if _, err := d.run(ctx, nil, "image", "inspect", tag); err == nil {
 		return tag, nil
 	}
-	dir := filepath.Join(d.opts.StateDir, "gateway-image")
-	if err := os.RemoveAll(dir); err != nil {
+	if err := BuildGatewayImage(ctx, binary, d.opts.StateDir, tag, d.labels(gatewayRole)...); err != nil {
 		return "", err
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", err
+	d.removeOldGatewayImages(ctx, tag)
+	return tag, nil
+}
+
+// BuildGatewayImage packages a static Linux deployerd binary as a gateway
+// image tagged tag, using a scratch directory inside workDir. buildArgs are
+// added to docker build, such as labels.
+func BuildGatewayImage(ctx context.Context, binary []byte, workDir, tag string, buildArgs ...string) error {
+	dir, err := os.MkdirTemp(workDir, "gateway-image-")
+	if err != nil {
+		return err
 	}
 	defer os.RemoveAll(dir)
-	if err := os.WriteFile(filepath.Join(dir, "deployerd"), binary, 0o755); err != nil {
-		return "", err
+	files := []struct {
+		name string
+		data []byte
+		mode os.FileMode
+	}{{"deployerd", binary, 0o755}, {"Dockerfile", []byte(GatewayDockerfile), 0o644}}
+	for _, f := range files {
+		path := filepath.Join(dir, f.name)
+		if err := os.WriteFile(path, f.data, f.mode); err != nil {
+			return err
+		}
+		// The service runs with umask 077, and the gateway runs as an
+		// unprivileged user without capabilities: set modes explicitly.
+		if err := os.Chmod(path, f.mode); err != nil {
+			return err
+		}
 	}
-	if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte(GatewayDockerfile), 0o644); err != nil {
-		return "", err
+	args := append([]string{"build", "--network", "none", "--tag", tag}, buildArgs...)
+	if _, err := execx.Run(ctx, execx.Cmd{Name: "docker", Args: append(args, dir)}); err != nil {
+		return fmt.Errorf("build gateway image: %w", err)
 	}
-	args := append([]string{"build", "--network", "none", "--tag", tag}, d.labels(gatewayRole)...)
-	if _, err := d.run(ctx, nil, append(args, dir)...); err != nil {
-		return "", fmt.Errorf("build gateway image: %w", err)
+	return nil
+}
+
+// removeOldGatewayImages deletes gateway images of earlier releases.
+func (d *Docker) removeOldGatewayImages(ctx context.Context, current string) {
+	out, err := d.run(ctx, nil, "image", "ls", "--format", "{{.Repository}}:{{.Tag}}",
+		"--filter", "label="+labelInstallation+"="+d.opts.InstallationID, "--filter", "label="+labelDeployment+"="+gatewayRole)
+	if err != nil {
+		return
 	}
-	return tag, nil
+	for _, image := range strings.Fields(out) {
+		if image != current {
+			d.run(ctx, nil, "image", "rm", image) // Fails harmlessly while in use.
+		}
+	}
 }
 
 // GatewayDockerfile packages a static deployerd binary as the gateway.

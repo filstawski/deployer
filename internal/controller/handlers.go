@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -61,6 +62,9 @@ func (c *Controller) build(ctx context.Context, d domain.Deployment) (domain.Dep
 	defer os.RemoveAll(source)
 	commit, err := c.source.Fetch(ctx, project.Repository, d.Ref, d.Commit, source)
 	if err != nil {
+		return d, err
+	}
+	if err := normalizePermissions(source); err != nil {
 		return d, err
 	}
 	recipe, err := config.LoadRecipe(source)
@@ -300,5 +304,28 @@ func (c *Controller) setState(ctx context.Context, id string, state domain.State
 	return c.store.UpdateDeployment(ctx, id, func(d *domain.Deployment) error {
 		d.State = state
 		return nil
+	})
+}
+
+// normalizePermissions gives a checkout the modes Git records, 0644 or 0755,
+// and 0755 for directories. The service runs with umask 077, which would
+// otherwise make files owner-only, and apps running as a non-root USER could
+// not read their own files.
+func normalizePermissions(root string) error {
+	return filepath.WalkDir(root, func(path string, e fs.DirEntry, err error) error {
+		if err != nil || e.Type()&fs.ModeSymlink != 0 {
+			return err
+		}
+		mode := fs.FileMode(0o755)
+		if !e.IsDir() {
+			info, err := e.Info()
+			if err != nil {
+				return err
+			}
+			if info.Mode()&0o111 == 0 {
+				mode = 0o644
+			}
+		}
+		return os.Chmod(path, mode)
 	})
 }

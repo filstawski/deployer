@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -408,5 +409,23 @@ func TestReconcilerRespectsOperationsInFlight(t *testing.T) {
 	}
 	if d := h.get(id); d.State != domain.StateStopped {
 		t.Fatalf("expired despite extension: %s", d.State)
+	}
+}
+
+func TestNormalizePermissions(t *testing.T) {
+	old := syscall.Umask(0o077)
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "src"), 0o755)
+	os.WriteFile(filepath.Join(dir, "src", "app.js"), []byte("x"), 0o644)
+	os.WriteFile(filepath.Join(dir, "run.sh"), []byte("x"), 0o755)
+	syscall.Umask(old)
+	if err := normalizePermissions(dir); err != nil {
+		t.Fatal(err)
+	}
+	for path, want := range map[string]os.FileMode{"src": 0o755, "src/app.js": 0o644, "run.sh": 0o755} {
+		info, err := os.Stat(filepath.Join(dir, path))
+		if err != nil || info.Mode().Perm() != want {
+			t.Errorf("%s: %v, want %v (%v)", path, info.Mode().Perm(), want, err)
+		}
 	}
 }
