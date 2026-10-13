@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -210,12 +211,20 @@ func (a *app) done(format string, args ...any) {
 	a.progress("%s %s", a.errs.ok("✓"), fmt.Sprintf(format, args...))
 }
 
-func openBrowser(url string) error {
-	name := "xdg-open"
-	if runtime.GOOS == "darwin" {
-		name = "open"
+// openBrowser opens a web page. Other addresses, such as local files, would
+// open with whatever program handles them, so they are refused.
+func openBrowser(page string) error {
+	if u, err := url.Parse(page); err != nil || u.Scheme != "https" && u.Scheme != "http" {
+		return fmt.Errorf("%q is not a web address", page)
 	}
-	return exec.Command(name, url).Run()
+	switch runtime.GOOS {
+	case "darwin":
+		return exec.Command("open", page).Run()
+	case "windows":
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", page).Run()
+	default:
+		return exec.Command("xdg-open", page).Run()
+	}
 }
 
 // exactArgs is cobra.ExactArgs with an actionable usage error.

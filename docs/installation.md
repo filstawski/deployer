@@ -25,7 +25,7 @@ Size the server for the previews you'll run: each preview may use up to 1 CPU
 and 512 MiB of memory by default, and one build runs at a time with up to 2 CPUs
 and 2 GiB.
 
-On your laptop: macOS or Linux (Windows through WSL).
+On your laptop: macOS, Linux, or Windows 10 or later.
 
 ## 1. Point DNS at the server
 
@@ -138,6 +138,24 @@ The CLI is installed in `~/.local/bin`, and the installer tells you if that
 directory is not on your `PATH`. The token is saved in
 `~/.config/deployer/tokens/` with mode 600.
 
+**On Windows**, install it from PowerShell:
+
+```powershell
+irm https://github.com/filstawski/deployer/releases/latest/download/install.ps1 | iex
+deployer login https://api.previews.example.com
+deployer status
+```
+
+This installs `deployer.exe` in `%LOCALAPPDATA%\Programs\deployer` and adds that
+folder to your `PATH`; terminals opened afterwards find it. To install a
+specific release, set `$env:DEPLOYER_VERSION = "v1.2.3"` first. The token is
+saved in `%APPDATA%\deployer\tokens\`, readable only by you.
+
+Windows Terminal, the default on Windows 11, shows deployer's colors and symbols
+best. The older console window of Windows 10 works, but may show some symbols as
+boxes. In Git Bash's own window, deployer can't detect the terminal, so it
+prints plain output and doesn't ask questions.
+
 The `laptop` token has the *deployer* role: it can register projects and manage
 previews, but not create tokens. Tokens expire after 90 days by default. See
 [tokens](cli.md#tokens) for roles, project-scoped tokens for CI, and revoking.
@@ -152,7 +170,16 @@ deployer login ssh://root@server.example.com
 ```
 
 This uses your normal SSH configuration and keys. The server's host key must
-already be known: run `ssh root@server.example.com` once first.
+already be known: run `ssh root@server.example.com` once first. On Windows, the
+CLI uses the OpenSSH client that comes with Windows. ssh can't ask for a key's
+passphrase here, so load such a key into Windows' SSH agent first. Its service
+is off by default; start it once in PowerShell opened as administrator, then
+add your key as yourself:
+
+```powershell
+Get-Service ssh-agent | Set-Service -StartupType Automatic; Start-Service ssh-agent
+ssh-add
+```
 
 ## 5. Deploy something
 
@@ -181,7 +208,8 @@ release does not start, the previous release and database are restored
 automatically. Preview containers keep running. Visitors may see a few seconds
 of "temporarily unavailable" while the gateway container is replaced.
 
-On your laptop, `deployer upgrade` replaces the CLI with the latest release.
+On your laptop, `deployer upgrade` replaces the CLI with the latest release, on
+Windows too.
 
 Useful variations:
 

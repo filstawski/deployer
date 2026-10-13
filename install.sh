@@ -4,6 +4,9 @@
 #   Install the CLI (macOS, Linux):
 #     curl -fsSL https://github.com/filstawski/deployer/releases/latest/download/install.sh | sh
 #
+#   On Windows, install the CLI with install.ps1 instead, in PowerShell:
+#     irm https://github.com/filstawski/deployer/releases/latest/download/install.ps1 | iex
+#
 #   Install the server (Linux, as root); flags go to `deployer server install`:
 #     curl -fsSL .../install.sh | sh -s -- server --domain previews.example.com
 #
@@ -72,7 +75,9 @@ done
 case "$(uname -s)" in
   Darwin) os=darwin ;;
   Linux) os=linux ;;
-  *) fail "unsupported operating system $(uname -s); on Windows, use WSL" ;;
+  MINGW* | MSYS* | CYGWIN*)
+    fail "on Windows, install the CLI in PowerShell: irm https://github.com/$repository/releases/latest/download/install.ps1 | iex" ;;
+  *) fail "unsupported operating system $(uname -s)" ;;
 esac
 case "$(uname -m)" in
   x86_64 | amd64) arch=amd64 ;;

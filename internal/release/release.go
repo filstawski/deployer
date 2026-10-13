@@ -10,11 +10,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -29,7 +32,11 @@ func ValidVersion(v string) bool { return versionPattern.MatchString(v) }
 
 // Asset returns the file name of a binary in a release.
 func Asset(binary, version, goos, goarch string) string {
-	return fmt.Sprintf("%s_%s_%s_%s", binary, version, goos, goarch)
+	name := fmt.Sprintf("%s_%s_%s_%s", binary, version, goos, goarch)
+	if goos == "windows" {
+		name += ".exe"
+	}
+	return name
 }
 
 // Client fetches releases.
@@ -99,12 +106,51 @@ func (c *Client) Download(ctx context.Context, version string, assets map[string
 		staged[tmp] = dest
 	}
 	for tmp, dest := range staged {
-		if err := os.Rename(tmp, dest); err != nil {
+		if err := replace(tmp, dest); err != nil {
 			return err
 		}
 		delete(staged, tmp)
 	}
 	return nil
+}
+
+// replace moves a verified download to dest. Windows refuses to replace a
+// running program but lets it be renamed, so there the old file is moved
+// aside, to dest.old. It can't be removed while it runs; RemoveReplaced
+// removes it later.
+func replace(tmp, dest string) error {
+	if runtime.GOOS != "windows" {
+		return os.Rename(tmp, dest)
+	}
+	RemoveReplaced(dest)
+	old := dest + ".old"
+	if _, err := os.Lstat(old); err == nil { // A version from before runs from it.
+		old += "-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	}
+	if err := os.Rename(dest, old); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if err := os.Rename(tmp, dest); err != nil {
+		os.Rename(old, dest)
+		return err
+	}
+	os.Remove(old) // Fails while it runs.
+	return nil
+}
+
+// RemoveReplaced removes the versions of a program that replaced itself on
+// Windows, once they no longer run.
+func RemoveReplaced(path string) {
+	if runtime.GOOS != "windows" {
+		return
+	}
+	dir, prefix := filepath.Dir(path), filepath.Base(path)+".old"
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), prefix) {
+			os.Remove(filepath.Join(dir, e.Name()))
+		}
+	}
 }
 
 // fetch downloads url into a new file in dir and checks its SHA-256.

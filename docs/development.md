@@ -83,10 +83,10 @@ git push origin v0.2.0
 ```
 
 The [release workflow](../.github/workflows/release.yml) runs `make check`, then
-`scripts/release.sh`. That script builds `deployer` for macOS and Linux and
-`deployerd` for Linux, on amd64 and arm64. It also writes an `install.sh` that
-defaults to that version, plus `VERSION` and `SHA256SUMS`, and the workflow
-publishes everything as a GitHub release. Tags with a suffix, such as
+`scripts/release.sh`. That script builds `deployer` for macOS, Linux, and Windows
+(`.exe`), and `deployerd` for Linux, on amd64 and arm64. It also writes an
+`install.sh` and an `install.ps1` that default to that version, plus `VERSION`
+and `SHA256SUMS`, and the workflow publishes everything as a GitHub release. Tags with a suffix, such as
 `v0.2.0-rc.1`, become prereleases. GitHub's `latest` URL skips those.
 
 To build release files locally without publishing: `make release VERSION=v0.2.0`.
@@ -95,3 +95,12 @@ Test them with the installer's `--from` option:
 ```sh
 sh dist/install.sh --from "$PWD/dist" --bin-dir /tmp/deployer-test
 ```
+
+## Windows
+
+The CLI runs on Windows; the server doesn't. The packages the CLI is built from
+must build there, which `make check` verifies with `GOOS=windows go vet`. Keep
+platform differences in `_windows.go` and `_unix.go` files, as `secretfile`,
+`execx`, and `sshtunnel` do. CI also runs those packages' tests on Windows, then
+[installs and upgrades the CLI](../scripts/test-windows-install.ps1) with
+`install.ps1` the way a user would.

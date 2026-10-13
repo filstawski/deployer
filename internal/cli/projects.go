@@ -174,7 +174,8 @@ Dockerfile's EXPOSE instruction unless --port is given.`,
 			if port == 0 {
 				return usage("could not find the app's port in %s", dockerfile).WithHint("pass it with --port 3000")
 			}
-			recipe := fmt.Sprintf(recipeTemplate, dockerfile, port, health)
+			// Recipes use forward slashes on every platform.
+			recipe := fmt.Sprintf(recipeTemplate, filepath.ToSlash(dockerfile), port, health)
 			if _, err := config.ParseRecipe([]byte(recipe)); err != nil {
 				return usage("%v", err)
 			}

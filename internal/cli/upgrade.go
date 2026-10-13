@@ -93,8 +93,11 @@ func (a *app) upgradeClient(ctx context.Context, rel *release.Client, current, t
 	a.progress("Downloading deployer %s for %s/%s", target, runtime.GOOS, runtime.GOARCH)
 	err := rel.Download(ctx, target, map[string]string{release.Asset("deployer", target, runtime.GOOS, runtime.GOARCH): exe})
 	if errors.Is(err, fs.ErrPermission) {
-		return domain.Errorf(domain.CodeClient, "cannot replace %s: permission denied", exe).
-			WithHint("run it with sudo, or reinstall with the installer into a directory you own")
+		e := domain.Errorf(domain.CodeClient, "cannot replace %s: permission denied", exe)
+		if runtime.GOOS == "windows" {
+			return e.WithHint("run it in a terminal opened as administrator, or reinstall with install.ps1, which installs into a folder you own")
+		}
+		return e.WithHint("run it with sudo, or reinstall with the installer into a directory you own")
 	}
 	if err != nil {
 		return domain.Errorf(domain.CodeUnavailable, "%v", err)

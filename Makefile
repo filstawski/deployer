@@ -1,6 +1,9 @@
 VERSION ?= dev
 LDFLAGS := -s -w -X github.com/filstawski/deployer/internal/version.Version=$(VERSION)
 export CGO_ENABLED := 0
+# The packages the CLI is built from. They also build, and pass their tests, on
+# Windows; the server's packages only run on Linux.
+CLIENT_PACKAGES = $(shell GOOS=windows go list -deps ./cmd/deployer | grep '^github.com/filstawski/deployer')
 
 .DEFAULT_GOAL := help
 .PHONY: help build test check fmt e2e gateway-image dev release clean
@@ -17,6 +20,7 @@ test: ## Run the unit and integration tests
 check: ## Check formatting, vet, and run tests (what CI runs)
 	@test -z "$$(gofmt -l .)" || { gofmt -l .; echo "Run make fmt"; exit 1; }
 	go vet ./...
+	GOOS=windows go vet $(CLIENT_PACKAGES)
 	CGO_ENABLED=1 go test -race ./...
 
 fmt: ## Format the code

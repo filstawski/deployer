@@ -102,12 +102,11 @@ func (c *Client) do(ctx context.Context, method, path, key string, in, out any) 
 			case <-time.After(time.Duration(attempt) * 500 * time.Millisecond):
 			}
 		}
-		status, err := c.once(ctx, method, path, key, body, out)
+		transient, err := c.once(ctx, method, path, key, body, out)
 		if err == nil {
 			return nil
 		}
 		lastErr = err
-		transient := status == 0 || status == http.StatusBadGateway || status == http.StatusServiceUnavailable || status == http.StatusGatewayTimeout
 		if !retryable || !transient || ctx.Err() != nil {
 			break
 		}
@@ -115,14 +114,15 @@ func (c *Client) do(ctx context.Context, method, path, key string, in, out any) 
 	return lastErr
 }
 
-func (c *Client) once(ctx context.Context, method, path, key string, body []byte, out any) (int, error) {
+// once sends one request. It reports whether a failure may be temporary.
+func (c *Client) once(ctx context.Context, method, path, key string, body []byte, out any) (bool, error) {
 	var reader io.Reader
 	if body != nil {
 		reader = bytes.NewReader(body)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, c.base+path, reader)
 	if err != nil {
-		return 0, err
+		return false, err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Accept", "application/json")
@@ -136,27 +136,33 @@ func (c *Client) once(ctx context.Context, method, path, key string, body []byte
 	resp, err := c.http.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
-			return 0, ctx.Err()
+			return false, ctx.Err()
 		}
-		return 0, domain.Errorf(domain.CodeUnavailable, "cannot reach the Deployer API at %s: %v", c.base, unwrapURLError(err))
+		// A transport that explains its own failure, as the SSH tunnel does
+		// when ssh fails, has already tried; say what it said.
+		if e, ok := domain.AsError(err); ok {
+			return false, e
+		}
+		return true, domain.Errorf(domain.CodeUnavailable, "cannot reach the Deployer API at %s: %v", c.base, unwrapURLError(err))
 	}
 	defer resp.Body.Close()
+	transient := resp.StatusCode == http.StatusBadGateway || resp.StatusCode == http.StatusServiceUnavailable || resp.StatusCode == http.StatusGatewayTimeout
 	var env domain.Envelope[json.RawMessage]
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(&env); err != nil {
-		return resp.StatusCode, domain.Errorf(domain.CodeUnavailable, "%s did not return a Deployer API response (HTTP %d); check the server URL", c.base, resp.StatusCode)
+		return transient, domain.Errorf(domain.CodeUnavailable, "%s did not return a Deployer API response (HTTP %d); check the server URL", c.base, resp.StatusCode)
 	}
 	if env.Error != nil {
-		return resp.StatusCode, env.Error
+		return transient, env.Error
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return resp.StatusCode, domain.Errorf(domain.CodeUnavailable, "unexpected HTTP %d from %s", resp.StatusCode, c.base)
+		return transient, domain.Errorf(domain.CodeUnavailable, "unexpected HTTP %d from %s", resp.StatusCode, c.base)
 	}
 	if out != nil && len(env.Data) > 0 {
 		if err := json.Unmarshal(env.Data, out); err != nil {
-			return resp.StatusCode, fmt.Errorf("decode response: %w", err)
+			return false, fmt.Errorf("decode response: %w", err)
 		}
 	}
-	return resp.StatusCode, nil
+	return false, nil
 }
 
 func unwrapURLError(err error) error {

@@ -3,3 +3,4 @@
 /.deployer/
 coverage.out
 .DS_Store
+*.exe

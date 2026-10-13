@@ -20,6 +20,7 @@ import (
 	"github.com/filstawski/deployer/internal/domain"
 	"github.com/filstawski/deployer/internal/fakes"
 	"github.com/filstawski/deployer/internal/release"
+	"github.com/filstawski/deployer/internal/secretfile"
 	"github.com/filstawski/deployer/internal/testenv"
 )
 
@@ -95,9 +96,8 @@ func TestLoginAndContexts(t *testing.T) {
 	if strings.Contains(string(config), "dpl_") {
 		t.Fatal("config.json contains a token")
 	}
-	info, err := os.Stat(filepath.Join(h.config, "tokens", "test.token"))
-	if err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("token file: %v %v", info, err)
+	if _, err := secretfile.ReadToken(filepath.Join(h.config, "tokens", "test.token")); err != nil {
+		t.Fatalf("token file: %v", err) // Also fails if others can read it.
 	}
 	var contexts struct {
 		Current string `json:"current"`
@@ -247,7 +247,7 @@ func git(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com")
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
@@ -295,8 +295,8 @@ func TestTokens(t *testing.T) {
 	if strings.Contains(r.stdout, "dpl_") {
 		t.Fatal("secret printed despite --output")
 	}
-	if info, err := os.Stat(out); err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("output file: %v %v", info, err)
+	if _, err := secretfile.ReadToken(out); err != nil {
+		t.Fatalf("output file: %v", err)
 	}
 	var tokens []domain.Token
 	h.ok("token", "list", "--json").json(t, &tokens)
@@ -330,6 +330,16 @@ func TestInitAndValidate(t *testing.T) {
 	if r := h.run("", "validate"); r.code != ExitUsage || !strings.Contains(r.stderr, "version") {
 		t.Fatalf("invalid recipe: %d %s", r.code, r.stderr)
 	}
+
+	// A Dockerfile given as a Windows path is written with forward slashes.
+	h.dir = t.TempDir()
+	os.MkdirAll(filepath.Join(h.dir, "docker"), 0o755)
+	os.WriteFile(filepath.Join(h.dir, "docker", "Dockerfile"), []byte("EXPOSE 8080\n"), 0o644)
+	h.ok("init", "--dockerfile", filepath.Join("docker", "Dockerfile"))
+	if recipe, _ := os.ReadFile(filepath.Join(h.dir, "deployer.yaml")); !strings.Contains(string(recipe), "dockerfile: docker/Dockerfile\n") {
+		t.Fatalf("recipe:\n%s", recipe)
+	}
+	h.ok("validate")
 }
 
 func TestUsageErrors(t *testing.T) {
@@ -395,7 +405,8 @@ func (h *harness) runEnv(env func(*Env), args ...string) result {
 
 func TestUpgradeClient(t *testing.T) {
 	h := newHarness(t)
-	url := releaseServer(t, "v9.9.9", map[string]string{"deployer": "#!/bin/sh\necho deployer v9.9.9\n"})
+	const binary = "#!/bin/sh\necho deployer v9.9.9\n"
+	url := releaseServer(t, "v9.9.9", map[string]string{"deployer": binary})
 	exe := filepath.Join(t.TempDir(), "deployer")
 	os.WriteFile(exe, []byte("old"), 0o755)
 	env := func(e *Env) { e.Executable, e.ReleaseURL, e.ServerReleases = exe, url, "/opt/deployer/releases" }
@@ -413,8 +424,13 @@ func TestUpgradeClient(t *testing.T) {
 	if r.code != 0 || !strings.Contains(r.stdout, "Upgraded deployer from dev to v9.9.9") {
 		t.Fatalf("upgrade: %d %s %s", r.code, r.stdout, r.stderr)
 	}
-	if out, err := exec.Command(exe).Output(); err != nil || string(out) != "deployer v9.9.9\n" {
-		t.Fatalf("upgraded binary: %q %v", out, err)
+	if b, _ := os.ReadFile(exe); string(b) != binary {
+		t.Fatalf("upgraded binary: %q", b)
+	}
+	if runtime.GOOS != "windows" { // It is executable.
+		if out, err := exec.Command(exe).Output(); err != nil || string(out) != "deployer v9.9.9\n" {
+			t.Fatalf("upgraded binary: %q %v", out, err)
+		}
 	}
 	if r := h.runEnv(env, "upgrade", "--version", "latest"); r.code != ExitUsage {
 		t.Fatalf("invalid --version: %d", r.code)
@@ -422,6 +438,9 @@ func TestUpgradeClient(t *testing.T) {
 }
 
 func TestUpgradeServerDelegatesToNewRelease(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the server runs on Linux")
+	}
 	h := newHarness(t)
 	opt := t.TempDir()
 	releases := filepath.Join(opt, "releases")

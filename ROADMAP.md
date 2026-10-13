@@ -15,7 +15,8 @@ The [design notes](docs/design.md) describe how planned features should behave.
 - Durable, ordered, cancellable operations; idempotent requests
 - Scoped API tokens; JSON output and stable error codes for agents
 - Server install, upgrade with rollback, and uninstall; nginx configuration
-- CLI over HTTPS or SSH, with automatic project registration
+- CLI for macOS, Linux, and Windows, over HTTPS or SSH, with automatic project
+  registration
 - Updating a preview in place from newer commits, keeping its name, URL, and
   lifetime, with the previous version kept if the new one fails
 

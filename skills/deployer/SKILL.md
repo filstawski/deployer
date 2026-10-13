@@ -58,7 +58,9 @@ deployer status --json
   them. Then either set `DEPLOYER_URL` and `DEPLOYER_TOKEN` in the environment, or
   run `deployer login URL --token-stdin` with the token on standard input.
 - `deployer: command not found`: ask the user to install the CLI with
-  `curl -fsSL https://github.com/filstawski/deployer/releases/latest/download/install.sh | sh`.
+  `curl -fsSL https://github.com/filstawski/deployer/releases/latest/download/install.sh | sh`,
+  or on Windows, in PowerShell, with
+  `irm https://github.com/filstawski/deployer/releases/latest/download/install.ps1 | iex`.
 
 ## 2. Make sure the project has a recipe
 

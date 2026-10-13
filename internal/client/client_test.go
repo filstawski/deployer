@@ -100,3 +100,22 @@ func TestRetriesOnlySafeRequests(t *testing.T) {
 		t.Fatalf("write with idempotency key not retried: %d", calls.Load())
 	}
 }
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// A transport that explains its own failure, as the SSH tunnel does, is
+// quoted as is and not retried.
+func TestTransportErrorsThatExplainThemselves(t *testing.T) {
+	var calls atomic.Int32
+	failed := domain.Errorf(domain.CodeUnavailable, "ssh to prod failed: Host key verification failed.").WithHint("check that `ssh prod` works without prompts")
+	c, _ := client.New("http://deployer", "dpl_x", client.Options{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		calls.Add(1)
+		return nil, failed
+	})})
+	_, err := c.Status(context.Background())
+	if e, ok := domain.AsError(err); !ok || e.Message != failed.Message || e.Hint != failed.Hint || calls.Load() != 1 {
+		t.Fatalf("%d calls: %#v", calls.Load(), err)
+	}
+}
