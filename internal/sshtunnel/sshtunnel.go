@@ -1,7 +1,12 @@
-// Package sshtunnel reaches a server's loopback-only API through OpenSSH. Each
-// CLI invocation starts its own ssh process, forwards a private Unix socket,
-// and stops ssh when the command finishes. The user's SSH configuration and
-// known_hosts apply; host keys are never accepted automatically.
+// Package sshtunnel reaches a server's loopback-only API through OpenSSH.
+// The user's SSH configuration and known_hosts apply; host keys are never
+// accepted automatically, and ssh never prompts.
+//
+// On macOS and Linux, each CLI invocation starts one ssh process that
+// forwards a private Unix socket, and stops it when the command finishes.
+// Windows' OpenSSH can't forward Unix sockets, and a local TCP port could be
+// taken over by another program, so there each connection runs `ssh -W`,
+// which carries it over ssh's standard input and output instead.
 package sshtunnel
 
 import (
@@ -15,6 +20,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -78,7 +84,7 @@ func (t Target) String() string {
 
 // Tunnel is an open SSH forwarding. Close it when done.
 type Tunnel struct {
-	Transport *http.Transport
+	Transport http.RoundTripper
 	close     func()
 }
 
@@ -88,32 +94,59 @@ func (t *Tunnel) Close() { t.close() }
 // command builds the ssh process; tests replace it.
 var command = exec.CommandContext
 
-// Open starts ssh and forwards a private socket to the server's loopback
-// API port.
+// Open starts forwarding connections to the server's loopback API port.
 func Open(ctx context.Context, t Target, apiPort int) (*Tunnel, error) {
 	if apiPort == 0 {
 		apiPort = DefaultAPIPort
 	}
+	if runtime.GOOS == "windows" {
+		return openStdio(t, apiPort), nil
+	}
+	return openSocket(ctx, t, apiPort)
+}
+
+// args returns ssh's command line: no prompts, unknown host keys refused,
+// nothing forwarded but the API, then forward and the destination.
+func (t Target) args(forward ...string) []string {
+	args := []string{
+		"-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ExitOnForwardFailure=yes",
+		"-o", "ForwardAgent=no", "-o", "ForwardX11=no", "-o", "PermitLocalCommand=no",
+		"-o", "ControlMaster=no", "-o", "ControlPath=none",
+		"-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=3"}
+	args = append(args, forward...)
+	if t.Port != 0 {
+		args = append(args, "-p", strconv.Itoa(t.Port))
+	}
+	return append(args, "--", t.destination())
+}
+
+func (t Target) destination() string {
+	if t.User != "" {
+		return t.User + "@" + t.Host
+	}
+	return t.Host
+}
+
+// failure explains that ssh exited with an error, using what it printed.
+func (t Target) failure(stderr string) error {
+	lines := strings.FieldsFunc(stderr, func(r rune) bool { return r == '\n' || r == '\r' })
+	return &Error{fmt.Sprintf("ssh to %s failed: %s; check that `ssh %s` works without prompts", t.destination(), strings.Join(lines, "; "), t.destination())}
+}
+
+// Error reports that ssh failed.
+type Error struct{ msg string }
+
+func (e *Error) Error() string { return e.msg }
+
+// openSocket starts one ssh process that forwards a private Unix socket.
+func openSocket(ctx context.Context, t Target, apiPort int) (*Tunnel, error) {
 	// macOS's per-user temporary directory exceeds the Unix socket path limit.
 	dir, err := os.MkdirTemp("/tmp", "deployer-ssh-")
 	if err != nil {
 		return nil, err
 	}
 	socket := filepath.Join(dir, "api.sock")
-	args := []string{"-N", "-T", "-n",
-		"-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ExitOnForwardFailure=yes",
-		"-o", "ForwardAgent=no", "-o", "ForwardX11=no", "-o", "PermitLocalCommand=no",
-		"-o", "ControlMaster=no", "-o", "ControlPath=none",
-		"-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=3",
-		"-L", fmt.Sprintf("%s:127.0.0.1:%d", socket, apiPort)}
-	if t.Port != 0 {
-		args = append(args, "-p", strconv.Itoa(t.Port))
-	}
-	dest := t.Host
-	if t.User != "" {
-		dest = t.User + "@" + t.Host
-	}
-	args = append(args, "--", dest)
+	args := t.args("-N", "-T", "-n", "-L", fmt.Sprintf("%s:127.0.0.1:%d", socket, apiPort))
 
 	procCtx, cancel := context.WithCancel(context.Background())
 	cmd := command(procCtx, "ssh", args...)
@@ -149,7 +182,7 @@ func Open(ctx context.Context, t Target, apiPort int) (*Tunnel, error) {
 		select {
 		case <-exited:
 			closeFn()
-			return nil, fmt.Errorf("ssh %s failed: %s; check that `ssh %s` works without prompts", t, strings.TrimSpace(stderr.String()), dest)
+			return nil, t.failure(stderr.String())
 		case <-deadline.C:
 			closeFn()
 			return nil, fmt.Errorf("ssh %s timed out", t)

@@ -211,11 +211,14 @@ func (a *app) done(format string, args ...any) {
 }
 
 func openBrowser(url string) error {
-	name := "xdg-open"
-	if runtime.GOOS == "darwin" {
-		name = "open"
+	switch runtime.GOOS {
+	case "darwin":
+		return exec.Command("open", url).Run()
+	case "windows":
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Run()
+	default:
+		return exec.Command("xdg-open", url).Run()
 	}
-	return exec.Command(name, url).Run()
 }
 
 // exactArgs is cobra.ExactArgs with an actionable usage error.

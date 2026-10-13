@@ -10,11 +10,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -29,7 +31,11 @@ func ValidVersion(v string) bool { return versionPattern.MatchString(v) }
 
 // Asset returns the file name of a binary in a release.
 func Asset(binary, version, goos, goarch string) string {
-	return fmt.Sprintf("%s_%s_%s_%s", binary, version, goos, goarch)
+	name := fmt.Sprintf("%s_%s_%s_%s", binary, version, goos, goarch)
+	if goos == "windows" {
+		name += ".exe"
+	}
+	return name
 }
 
 // Client fetches releases.
@@ -99,13 +105,44 @@ func (c *Client) Download(ctx context.Context, version string, assets map[string
 		staged[tmp] = dest
 	}
 	for tmp, dest := range staged {
-		if err := os.Rename(tmp, dest); err != nil {
+		if err := replace(tmp, dest); err != nil {
 			return err
 		}
 		delete(staged, tmp)
 	}
 	return nil
 }
+
+// replace moves a verified download to dest. Windows refuses to replace a
+// running program but lets it be renamed, so there the old file is moved
+// aside first. It can't be removed while it runs; RemoveReplaced removes it
+// later.
+func replace(tmp, dest string) error {
+	if runtime.GOOS != "windows" {
+		return os.Rename(tmp, dest)
+	}
+	old := replacedPath(dest)
+	os.Remove(old)
+	if err := os.Rename(dest, old); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if err := os.Rename(tmp, dest); err != nil {
+		os.Rename(old, dest)
+		return err
+	}
+	os.Remove(old) // Fails if it is still running.
+	return nil
+}
+
+// RemoveReplaced removes the previous version of a program that replaced
+// itself on Windows, once it no longer runs.
+func RemoveReplaced(path string) {
+	if runtime.GOOS == "windows" {
+		os.Remove(replacedPath(path))
+	}
+}
+
+func replacedPath(path string) string { return path + ".old" }
 
 // fetch downloads url into a new file in dir and checks its SHA-256.
 func (c *Client) fetch(ctx context.Context, url, dir, wantSum string) (string, error) {

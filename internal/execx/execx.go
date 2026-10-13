@@ -8,7 +8,6 @@ import (
 	"io"
 	"os/exec"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -50,15 +49,13 @@ func (e *Error) Error() string {
 func (e *Error) Unwrap() error { return e.Err }
 
 // Run executes c and returns its combined output, bounded to MaxOutput.
-// Cancelling ctx kills the command's whole process group, so helpers spawned
-// by git or docker cannot outlive the operation.
+// Cancelling ctx kills the command; see killGroup.
 func Run(ctx context.Context, c Cmd) (string, error) {
 	cmd := exec.CommandContext(ctx, c.Name, c.Args...)
 	cmd.Dir = c.Dir
 	cmd.Env = c.Env
 	cmd.Stdin = c.Stdin
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	killGroup(cmd)
 	cmd.WaitDelay = 2 * time.Second
 	var buf bytes.Buffer
 	var out io.Writer = &LimitedWriter{W: &buf, N: MaxOutput}

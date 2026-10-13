@@ -89,6 +89,13 @@ curl -fsSL https://github.com/filstawski/deployer/releases/latest/download/insta
 deployer login https://api.previews.example.com    # paste the token
 ```
 
+On Windows, in PowerShell:
+
+```powershell
+irm https://github.com/filstawski/deployer/releases/latest/download/install.ps1 | iex
+deployer login https://api.previews.example.com
+```
+
 **3. Deploy.** In a repository that has a Dockerfile:
 
 ```sh

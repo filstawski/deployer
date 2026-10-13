@@ -55,9 +55,11 @@ deployer list --context production     # one command against another server
 deployer logout staging
 ```
 
-Contexts live in `~/.config/deployer/config.json`, or `$XDG_CONFIG_HOME/deployer`.
-Tokens are stored separately in `tokens/NAME.token` with mode 600. Set
-`DEPLOYER_CONFIG_DIR` to use another directory.
+Contexts live in `~/.config/deployer/config.json`, or `$XDG_CONFIG_HOME/deployer`;
+on Windows, in `%APPDATA%\deployer\config.json`. Tokens are stored separately in
+`tokens/NAME.token`, readable only by you: mode 600, or on Windows an access
+list that allows only your account. Set `DEPLOYER_CONFIG_DIR` to use another
+directory.
 
 **Without saving anything**, for CI and agents, set both variables:
 
@@ -79,7 +81,10 @@ deployer login ssh://root@server.example.com
 
 The CLI starts `ssh` for each command and forwards to the API's loopback port
 (`--api-port`, default 7420). It never accepts unknown host keys, so connect
-with `ssh` once first. Ports, keys, and aliases come from `~/.ssh/config`.
+with `ssh` once first. Ports, keys, and aliases come from `~/.ssh/config`. ssh
+runs without prompts, so a key with a passphrase must be loaded into your SSH
+agent. On Windows, that's the OpenSSH client and `ssh-agent` service that come
+with Windows.
 
 ## Deploying
 
@@ -315,7 +320,15 @@ echo 'source <(deployer completion bash)' >> ~/.bashrc          # or just for yo
 
 **fish**: `deployer completion fish > ~/.config/fish/completions/deployer.fish`
 
-Open a new terminal afterwards. `echo $SHELL` shows which shell you use.
+**PowerShell**, on Windows, adds it to your profile:
+
+```powershell
+if (-not (Test-Path $PROFILE)) { New-Item -ItemType File -Path $PROFILE -Force | Out-Null }
+Add-Content $PROFILE 'deployer completion powershell | Out-String | Invoke-Expression'
+```
+
+Open a new terminal afterwards. On macOS and Linux, `echo $SHELL` shows which
+shell you use.
 
 ## Guide for agents
 
@@ -343,7 +356,8 @@ deployer upgrade --version v0.3.0
 ```
 
 Downloads are verified against the release's checksums before anything is
-replaced. On a Deployer server, `deployer upgrade` upgrades the whole server; it
+replaced. On Windows, the running `deployer.exe` is moved aside to
+`deployer.exe.old`, which the next command removes. On a Deployer server, `deployer upgrade` upgrades the whole server; it
 runs as root and is the same as `deployer server upgrade`.
 
 ## Server administration

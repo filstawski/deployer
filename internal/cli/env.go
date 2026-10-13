@@ -8,7 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/filstawski/deployer/internal/install"
+	"github.com/filstawski/deployer/internal/release"
 	"golang.org/x/term"
 )
 
@@ -19,7 +21,8 @@ type Env struct {
 	Stdout io.Writer
 	Stderr io.Writer
 	Getenv func(string) string
-	// ConfigDir holds saved contexts and tokens.
+	// ConfigDir holds saved contexts and tokens: ~/.config/deployer, or
+	// %APPDATA%\deployer on Windows.
 	ConfigDir string
 	// Interactive reports whether a person is at the terminal, which enables
 	// prompts and in-place progress output.
@@ -54,6 +57,10 @@ type Env struct {
 
 // ProcessEnv returns the Env of the current process.
 func ProcessEnv() Env {
+	// Windows consoles show colors and redraw the status line only when
+	// asked to; this does nothing elsewhere.
+	lipgloss.EnableLegacyWindowsANSI(os.Stdout)
+	lipgloss.EnableLegacyWindowsANSI(os.Stderr)
 	env := Env{
 		Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, Getenv: os.Getenv,
 		Interactive: term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stderr.Fd())),
@@ -70,28 +77,39 @@ func ProcessEnv() Env {
 		env.Prompter = huhPrompter{in: os.Stdin, out: os.Stderr}
 	}
 	env.WorkDir, _ = os.Getwd()
-	env.ConfigDir = os.Getenv("DEPLOYER_CONFIG_DIR")
-	if env.ConfigDir == "" {
-		base := os.Getenv("XDG_CONFIG_HOME")
-		if base == "" {
-			home, _ := os.UserHomeDir()
-			base = filepath.Join(home, ".config")
+	home, _ := os.UserHomeDir()
+	env.ConfigDir = configDir(os.Getenv, runtime.GOOS, home)
+	if runtime.GOOS == "linux" {
+		env.Root = os.Geteuid() == 0
+		env.ServerReleases = install.ReleasesDir
+		if env.Root {
+			env.ServerConfig = "/etc/deployer/server.yaml"
 		}
-		env.ConfigDir = filepath.Join(base, "deployer")
 	}
-	if runtime.GOOS == "linux" && os.Geteuid() == 0 {
-		env.ServerConfig = "/etc/deployer/server.yaml"
-	}
-	env.Root = os.Geteuid() == 0
 	if exe, err := os.Executable(); err == nil {
 		if resolved, err := filepath.EvalSymlinks(exe); err == nil {
 			exe = resolved
 		}
 		env.Executable = exe
+		release.RemoveReplaced(exe) // What deployer upgrade left behind on Windows
 	}
 	env.ReleaseURL = os.Getenv("DEPLOYER_RELEASE_URL")
-	env.ServerReleases = install.ReleasesDir
 	return env
+}
+
+// configDir returns where the CLI keeps contexts and tokens.
+func configDir(getenv func(string) string, goos, home string) string {
+	if dir := getenv("DEPLOYER_CONFIG_DIR"); dir != "" {
+		return dir
+	}
+	base := getenv("XDG_CONFIG_HOME")
+	if base == "" && goos == "windows" {
+		base = getenv("APPDATA")
+	}
+	if base == "" {
+		base = filepath.Join(home, ".config")
+	}
+	return filepath.Join(base, "deployer")
 }
 
 // supportsLinks reports whether the terminal shows OSC 8 hyperlinks. Others
@@ -99,6 +117,9 @@ func ProcessEnv() Env {
 func (e Env) supportsLinks() bool {
 	switch e.Getenv("TERM_PROGRAM") {
 	case "iTerm.app", "WezTerm", "vscode", "ghostty", "WarpTerminal":
+		return true
+	}
+	if e.Getenv("WT_SESSION") != "" { // Windows Terminal
 		return true
 	}
 	term := e.Getenv("TERM")

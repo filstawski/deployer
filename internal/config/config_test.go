@@ -79,7 +79,7 @@ func TestRecipe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.HTTP.Healthcheck.Path != "/health" || r.HTTP.Healthcheck.Timeout.D() != 90*time.Second || !strings.HasSuffix(r.Dockerfile, "apps/web/Dockerfile") {
+	if r.HTTP.Healthcheck.Path != "/health" || r.HTTP.Healthcheck.Timeout.D() != 90*time.Second || !strings.HasSuffix(filepath.ToSlash(r.Dockerfile), "apps/web/Dockerfile") {
 		t.Fatalf("defaults not applied: %+v", r)
 	}
 
@@ -92,11 +92,16 @@ func TestRecipe(t *testing.T) {
 		"long timeout":   "version: 1\nsource:\n  dockerfile: Dockerfile\nhttp:\n  port: 1\n  healthcheck:\n    timeout: 1h\n",
 		"other service":  "version: 1\nsource:\n  dockerfile: Dockerfile\nhttp:\n  service: api\n  port: 1\n",
 		"absolute paths": "version: 1\nsource:\n  dockerfile: /etc/passwd\nhttp:\n  port: 1\n",
+		"windows paths":  "version: 1\nsource:\n  dockerfile: C:/app/Dockerfile\nhttp:\n  port: 1\n",
+		"backslashes":    "version: 1\nsource:\n  dockerfile: Dockerfile\n  context: apps\\web\nhttp:\n  port: 1\n",
 	}
 	for name, body := range bad {
 		if _, err := ParseRecipe([]byte(body)); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
+	}
+	if _, err := ParseRecipe([]byte(bad["backslashes"])); err == nil || !strings.Contains(err.Error(), "as in apps/web") {
+		t.Errorf("backslashes: %v", err)
 	}
 }
 

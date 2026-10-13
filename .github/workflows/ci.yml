@@ -27,3 +27,29 @@ jobs:
           go-version-file: go.mod
       - run: docker version
       - run: make e2e
+
+  # The CLI also runs on Windows. Test its packages there, then install and
+  # upgrade it the way users do.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Test the CLI's packages
+        shell: bash
+        run: go test $(go list -deps ./cmd/deployer | grep '^github.com/filstawski/deployer')
+      - name: Build releases to install
+        shell: bash
+        run: |
+          scripts/release.sh v0.0.1
+          mkdir -p site/download/v0.0.2 site/latest/download
+          mv dist site/download/v0.0.1
+          go build -trimpath -ldflags "-X github.com/filstawski/deployer/internal/version.Version=v0.0.2" \
+            -o site/download/v0.0.2/deployer_v0.0.2_windows_amd64.exe ./cmd/deployer
+          (cd site/download/v0.0.2 && sha256sum -- * > SHA256SUMS)
+          echo v0.0.2 > site/latest/download/VERSION
+      - name: Install and upgrade the CLI
+        shell: pwsh
+        run: ./scripts/test-windows-install.ps1 -Site site
