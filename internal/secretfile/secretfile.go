@@ -96,7 +96,7 @@ func Replace(path, secret string) error {
 	if err != nil {
 		return err
 	}
-	return os.Rename(f.Name(), path)
+	return rename(f.Name(), path)
 }
 
 // createTemp creates a new owner-only file in dir with a random name.

@@ -1,8 +1,11 @@
 package secretfile
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/filstawski/deployer/internal/domain"
 	"golang.org/x/sys/windows"
 )
 
@@ -44,5 +47,18 @@ func TestPrivateAccessList(t *testing.T) {
 	}
 	if sd.String() != want.String() {
 		t.Fatalf("access list %s, want %s", sd, want)
+	}
+}
+
+// A file in the user's profile, with the access list it inherits from there,
+// is private.
+func TestProfileFilesArePrivate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "token")
+	secret := domain.NewTokenSecret()
+	if err := os.WriteFile(path, []byte(secret+"\r\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := ReadToken(path); err != nil || got != secret {
+		t.Fatalf("ReadToken = %q, %v", got, err)
 	}
 }

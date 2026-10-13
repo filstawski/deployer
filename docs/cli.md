@@ -83,8 +83,8 @@ The CLI starts `ssh` for each command and forwards to the API's loopback port
 (`--api-port`, default 7420). It never accepts unknown host keys, so connect
 with `ssh` once first. Ports, keys, and aliases come from `~/.ssh/config`. ssh
 runs without prompts, so a key with a passphrase must be loaded into your SSH
-agent. On Windows, that's the OpenSSH client and `ssh-agent` service that come
-with Windows.
+agent. On Windows, the CLI uses the OpenSSH client that comes with Windows; see
+[installation](installation.md#without-a-public-api) for starting its agent.
 
 ## Deploying
 
@@ -326,6 +326,10 @@ echo 'source <(deployer completion bash)' >> ~/.bashrc          # or just for yo
 if (-not (Test-Path $PROFILE)) { New-Item -ItemType File -Path $PROFILE -Force | Out-Null }
 Add-Content $PROFILE 'deployer completion powershell | Out-String | Invoke-Expression'
 ```
+
+Windows PowerShell 5.1 doesn't run profile scripts by default. If a new window
+says running scripts is disabled, allow your own:
+`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. PowerShell 7 already does.
 
 Open a new terminal afterwards. On macOS and Linux, `echo $SHELL` shows which
 shell you use.

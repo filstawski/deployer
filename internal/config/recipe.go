@@ -94,11 +94,12 @@ func (r Recipe) validate() error {
 	// The server builds on Linux, so a recipe's paths mean the same on every
 	// platform: relative, with forward slashes.
 	for _, p := range []struct{ field, path string }{{"source.dockerfile", r.Source.Dockerfile}, {"source.context", r.Source.Context}} {
+		slashed := strings.ReplaceAll(p.path, `\`, "/")
 		switch {
-		case p.path == "" || path.IsAbs(p.path) || drivePattern.MatchString(p.path):
+		case p.path == "" || path.IsAbs(slashed) || drivePattern.MatchString(p.path):
 			return fmt.Errorf("%s: must be a path relative to the repository root", p.field)
-		case strings.Contains(p.path, `\`):
-			return fmt.Errorf("%s: use forward slashes, as in %s", p.field, strings.ReplaceAll(p.path, `\`, "/"))
+		case slashed != p.path:
+			return fmt.Errorf("%s: use forward slashes, as in %s", p.field, slashed)
 		}
 	}
 	for k, v := range r.Environment {

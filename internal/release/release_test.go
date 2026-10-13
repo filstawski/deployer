@@ -119,7 +119,8 @@ func TestHelperRunning(t *testing.T) {
 }
 
 // A CLI upgrading itself replaces the file it is running from, which Windows
-// only allows by moving it aside first.
+// only allows by moving it aside first. Upgrading twice while the first
+// version still runs moves the second one aside under another name.
 func TestReplaceRunningProgram(t *testing.T) {
 	self, err := os.ReadFile(os.Args[0])
 	if err != nil {
@@ -129,27 +130,38 @@ func TestReplaceRunningProgram(t *testing.T) {
 	if err := os.WriteFile(dest, self, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(dest, "-test.run=^TestHelperRunning$")
-	cmd.Env = append(os.Environ(), "DEPLOYER_TEST_RUNNING=1")
-	stdin, _ := cmd.StdinPipe()
-	stdout, _ := cmd.StdoutPipe()
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
+	run := func() (stop func()) {
+		cmd := exec.Command(dest, "-test.run=^TestHelperRunning$")
+		cmd.Env = append(os.Environ(), "DEPLOYER_TEST_RUNNING=1")
+		stdin, _ := cmd.StdinPipe()
+		stdout, _ := cmd.StdoutPipe()
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		stop = sync.OnceFunc(func() { stdin.Close(); cmd.Wait() })
+		t.Cleanup(stop)
+		if _, err := stdout.Read(make([]byte, 8)); err != nil {
+			t.Fatal(err)
+		}
+		return stop
 	}
-	stop := sync.OnceFunc(func() { stdin.Close(); cmd.Wait() })
-	defer stop()
-	if _, err := stdout.Read(make([]byte, 8)); err != nil {
-		t.Fatal(err)
+	srv := server(t, "v1.2.3", map[string]string{"deployer.exe": string(self)}, "")
+	upgrade := func() {
+		t.Helper()
+		if err := New(srv.URL).Download(context.Background(), "v1.2.3", map[string]string{"deployer.exe": dest}); err != nil {
+			t.Fatalf("replacing a running program: %v", err)
+		}
 	}
 
-	srv := server(t, "v1.2.3", map[string]string{"deployer.exe": "new"}, "")
-	if err := New(srv.URL).Download(context.Background(), "v1.2.3", map[string]string{"deployer.exe": dest}); err != nil {
-		t.Fatalf("replacing a running program: %v", err)
-	}
-	if b, _ := os.ReadFile(dest); string(b) != "new" {
+	first := run()
+	upgrade()
+	second := run()
+	upgrade()
+	if b, _ := os.ReadFile(dest); len(b) != len(self) {
 		t.Fatalf("not replaced: %d bytes", len(b))
 	}
-	stop()
+	first()
+	second()
 	RemoveReplaced(dest)
 	if entries, _ := os.ReadDir(filepath.Dir(dest)); len(entries) != 1 {
 		t.Fatalf("left behind: %v", entries)

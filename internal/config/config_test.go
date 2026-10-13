@@ -103,6 +103,10 @@ func TestRecipe(t *testing.T) {
 	if _, err := ParseRecipe([]byte(bad["backslashes"])); err == nil || !strings.Contains(err.Error(), "as in apps/web") {
 		t.Errorf("backslashes: %v", err)
 	}
+	rooted := "version: 1\nsource:\n  dockerfile: \\Dockerfile\nhttp:\n  port: 1\n"
+	if _, err := ParseRecipe([]byte(rooted)); err == nil || !strings.Contains(err.Error(), "relative to the repository root") {
+		t.Errorf("rooted backslash path: %v", err)
+	}
 }
 
 func TestRecipePathsStayInsideRepository(t *testing.T) {

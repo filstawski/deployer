@@ -73,18 +73,22 @@
 
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
         $dest = Join-Path $dir 'deployer.exe'
-        # Windows can't replace a running program, but can rename it.
-        Remove-Item "$dest.old" -Force -ErrorAction SilentlyContinue
+        # Windows can't replace a running program, but can rename it. Old
+        # versions that still run stay until deployer removes them later.
+        $removeOld = { Get-ChildItem -Path $dir -Filter 'deployer.exe.old*' | Remove-Item -Force -ErrorAction SilentlyContinue }
+        & $removeOld
+        $old = "$dest.old"
+        if (Test-Path $old) { $old = "$dest.old-" + [Guid]::NewGuid().ToString('N') }
         if (Test-Path $dest) {
-            Move-Item $dest "$dest.old" -Force
+            Move-Item $dest $old
         }
         try {
             Move-Item "$tmp\deployer.exe" $dest
         } catch {
-            if (Test-Path "$dest.old") { Move-Item "$dest.old" $dest -Force }
+            if (Test-Path $old) { Move-Item $old $dest }
             throw
         }
-        Remove-Item "$dest.old" -Force -ErrorAction SilentlyContinue # deployer removes it later if it's in use
+        & $removeOld
         Write-Host "Installed deployer $version to $dest"
     } finally {
         Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue

@@ -40,3 +40,11 @@ func TestSupportsLinks(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenBrowserOpensOnlyWebPages(t *testing.T) {
+	for _, page := range []string{"file:///etc/passwd", `C:\Windows\notepad.exe`, "javascript:alert(1)", ""} {
+		if err := openBrowser(page); err == nil {
+			t.Errorf("opened %q", page)
+		}
+	}
+}

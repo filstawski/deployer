@@ -25,6 +25,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/filstawski/deployer/internal/domain"
 )
 
 // DefaultAPIPort is the server's loopback API port.
@@ -128,15 +130,11 @@ func (t Target) destination() string {
 }
 
 // failure explains that ssh exited with an error, using what it printed.
-func (t Target) failure(stderr string) error {
+func (t Target) failure(stderr string) *domain.Error {
 	lines := strings.FieldsFunc(stderr, func(r rune) bool { return r == '\n' || r == '\r' })
-	return &Error{fmt.Sprintf("ssh to %s failed: %s; check that `ssh %s` works without prompts", t.destination(), strings.Join(lines, "; "), t.destination())}
+	return domain.Errorf(domain.CodeUnavailable, "ssh to %s failed: %s", t.destination(), strings.Join(lines, "; ")).
+		WithHint("check that `ssh %s` works without prompts", t.destination())
 }
-
-// Error reports that ssh failed.
-type Error struct{ msg string }
-
-func (e *Error) Error() string { return e.msg }
 
 // openSocket starts one ssh process that forwards a private Unix socket.
 func openSocket(ctx context.Context, t Target, apiPort int) (*Tunnel, error) {

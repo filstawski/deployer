@@ -97,7 +97,10 @@ func dial(ctx context.Context, conn connection) (*client.Client, func(), error) 
 		}
 		tunnel, err := sshtunnel.Open(ctx, target, conn.APIPort)
 		if err != nil {
-			return nil, nil, domain.Errorf(domain.CodeUnavailable, "%v", err)
+			if _, ok := domain.AsError(err); !ok {
+				err = domain.Errorf(domain.CodeUnavailable, "%v", err)
+			}
+			return nil, nil, err
 		}
 		opts.Transport, base, closeFn = tunnel.Transport, "http://deployer", tunnel.Close
 	}

@@ -10,6 +10,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/filstawski/deployer/internal/domain"
 )
 
 // openStdio forwards each HTTP connection through its own `ssh -W` process.
@@ -171,8 +173,7 @@ type reportFailures struct{ *http.Transport }
 
 func (t reportFailures) RoundTrip(req *http.Request) (*http.Response, error) {
 	resp, err := t.Transport.RoundTrip(req)
-	var failed *Error
-	if errors.As(err, &failed) {
+	if failed, ok := domain.AsError(err); ok {
 		return nil, failed
 	}
 	return resp, err

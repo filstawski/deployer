@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -38,6 +39,19 @@ func createPrivate(path string) (*os.File, error) {
 		return nil, &fs.PathError{Op: "open", Path: path, Err: err}
 	}
 	return os.NewFile(uintptr(h), path), nil
+}
+
+// rename replaces to. Windows refuses while another program, such as a
+// second deployer, has it open, so it tries again for a moment.
+func rename(from, to string) error {
+	for i := 0; ; i++ {
+		err := os.Rename(from, to)
+		busy := errors.Is(err, windows.ERROR_ACCESS_DENIED) || errors.Is(err, windows.ERROR_SHARING_VIOLATION)
+		if !busy || i == 20 {
+			return err
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 // readAccess are the rights that allow reading a file's contents.
@@ -87,7 +101,7 @@ func exposed(path string, user *windows.SID) error {
 	if account, domain, _, err := user.LookupAccount(""); err == nil {
 		name = domain + `\` + account
 	}
-	return fmt.Errorf(`%s is readable by other users; allow only yourself with: icacls "%s" /inheritance:r /grant:r "%s:F"`, path, path, name)
+	return fmt.Errorf(`%s is readable by other users; allow only yourself with: icacls "%s" /reset, then: icacls "%s" /inheritance:r /grant:r "%s:F"`, path, path, path, name)
 }
 
 func containsSID(list []*windows.SID, sid *windows.SID) bool {

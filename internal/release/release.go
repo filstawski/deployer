@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -115,14 +116,17 @@ func (c *Client) Download(ctx context.Context, version string, assets map[string
 
 // replace moves a verified download to dest. Windows refuses to replace a
 // running program but lets it be renamed, so there the old file is moved
-// aside first. It can't be removed while it runs; RemoveReplaced removes it
-// later.
+// aside, to dest.old. It can't be removed while it runs; RemoveReplaced
+// removes it later.
 func replace(tmp, dest string) error {
 	if runtime.GOOS != "windows" {
 		return os.Rename(tmp, dest)
 	}
-	old := replacedPath(dest)
-	os.Remove(old)
+	RemoveReplaced(dest)
+	old := dest + ".old"
+	if _, err := os.Lstat(old); err == nil { // A version from before runs from it.
+		old += "-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	}
 	if err := os.Rename(dest, old); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
@@ -130,19 +134,24 @@ func replace(tmp, dest string) error {
 		os.Rename(old, dest)
 		return err
 	}
-	os.Remove(old) // Fails if it is still running.
+	os.Remove(old) // Fails while it runs.
 	return nil
 }
 
-// RemoveReplaced removes the previous version of a program that replaced
-// itself on Windows, once it no longer runs.
+// RemoveReplaced removes the versions of a program that replaced itself on
+// Windows, once they no longer run.
 func RemoveReplaced(path string) {
-	if runtime.GOOS == "windows" {
-		os.Remove(replacedPath(path))
+	if runtime.GOOS != "windows" {
+		return
+	}
+	dir, prefix := filepath.Dir(path), filepath.Base(path)+".old"
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), prefix) {
+			os.Remove(filepath.Join(dir, e.Name()))
+		}
 	}
 }
-
-func replacedPath(path string) string { return path + ".old" }
 
 // fetch downloads url into a new file in dir and checks its SHA-256.
 func (c *Client) fetch(ctx context.Context, url, dir, wantSum string) (string, error) {

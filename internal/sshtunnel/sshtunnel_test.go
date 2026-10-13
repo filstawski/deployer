@@ -2,7 +2,6 @@ package sshtunnel
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -13,6 +12,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/filstawski/deployer/internal/domain"
 )
 
 func TestParse(t *testing.T) {
@@ -129,8 +130,8 @@ func TestSocketFailureIsActionable(t *testing.T) {
 	}
 	fakeSSH(t, "127.0.0.1:1", true)
 	_, err := openSocket(context.Background(), Target{Host: "example.com"}, DefaultAPIPort)
-	if err == nil || !strings.Contains(err.Error(), "Host key verification failed") || !strings.Contains(err.Error(), "ssh example.com") {
-		t.Fatalf("error: %v", err)
+	if e, ok := domain.AsError(err); !ok || e.Message != "ssh to example.com failed: Host key verification failed." || e.Hint != "check that `ssh example.com` works without prompts" {
+		t.Fatalf("error: %#v", err)
 	}
 }
 
@@ -162,9 +163,8 @@ func TestStdioFailureIsActionable(t *testing.T) {
 	tunnel := openStdio(Target{User: "root", Host: "example.com"}, DefaultAPIPort)
 	defer tunnel.Close()
 	_, err := get(t, tunnel, "/v1/server")
-	var failed *Error
-	if !errors.As(err, &failed) || !strings.Contains(failed.Error(), "Host key verification failed") || !strings.Contains(failed.Error(), "`ssh root@example.com`") {
-		t.Fatalf("error: %v", err)
+	if e, ok := domain.AsError(err); !ok || e.Message != "ssh to root@example.com failed: Host key verification failed." || e.Hint != "check that `ssh root@example.com` works without prompts" {
+		t.Fatalf("error: %#v", err)
 	}
 
 	// The API being down is reported the same way.
@@ -172,7 +172,7 @@ func TestStdioFailureIsActionable(t *testing.T) {
 	down := openStdio(Target{Host: "example.com"}, DefaultAPIPort)
 	defer down.Close()
 	_, err = get(t, down, "/v1/server")
-	if !errors.As(err, &failed) || !strings.Contains(failed.Error(), "connect failed") {
-		t.Fatalf("error: %v", err)
+	if e, ok := domain.AsError(err); !ok || !strings.Contains(e.Message, "connect failed: Connection refused; stdio forwarding failed") {
+		t.Fatalf("error: %#v", err)
 	}
 }

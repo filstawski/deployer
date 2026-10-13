@@ -3,7 +3,7 @@ LDFLAGS := -s -w -X github.com/filstawski/deployer/internal/version.Version=$(VE
 export CGO_ENABLED := 0
 # The packages the CLI is built from. They also build, and pass their tests, on
 # Windows; the server's packages only run on Linux.
-CLIENT_PACKAGES = $(shell go list -deps ./cmd/deployer | grep '^github.com/filstawski/deployer')
+CLIENT_PACKAGES = $(shell GOOS=windows go list -deps ./cmd/deployer | grep '^github.com/filstawski/deployer')
 
 .DEFAULT_GOAL := help
 .PHONY: help build test check fmt e2e gateway-image dev release clean

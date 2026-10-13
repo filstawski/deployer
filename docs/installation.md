@@ -172,8 +172,14 @@ deployer login ssh://root@server.example.com
 This uses your normal SSH configuration and keys. The server's host key must
 already be known: run `ssh root@server.example.com` once first. On Windows, the
 CLI uses the OpenSSH client that comes with Windows. ssh can't ask for a key's
-passphrase here, so load such a key into the `ssh-agent` service with
-`ssh-add` first.
+passphrase here, so load such a key into Windows' SSH agent first. Its service
+is off by default; start it once in PowerShell opened as administrator, then
+add your key as yourself:
+
+```powershell
+Get-Service ssh-agent | Set-Service -StartupType Automatic; Start-Service ssh-agent
+ssh-add
+```
 
 ## 5. Deploy something
 
