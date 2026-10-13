@@ -36,8 +36,13 @@ func TestPrivateAccessList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Formatting both the same way abbreviates well-known accounts alike.
 	user, _ := currentUser()
-	if got, want := sd.String(), "D:P(A;;FA;;;"+user.String()+")"; got != want {
-		t.Fatalf("access list %s, want %s", got, want)
+	want, err := windows.SecurityDescriptorFromString("D:P(A;;FA;;;" + user.String() + ")")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sd.String() != want.String() {
+		t.Fatalf("access list %s, want %s", sd, want)
 	}
 }

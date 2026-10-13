@@ -149,9 +149,12 @@ deployer status
 This installs `deployer.exe` in `%LOCALAPPDATA%\Programs\deployer` and adds that
 folder to your `PATH`; terminals opened afterwards find it. To install a
 specific release, set `$env:DEPLOYER_VERSION = "v1.2.3"` first. The token is
-saved in `%APPDATA%\deployer\tokens\`, readable only by you. Use Windows
-Terminal, PowerShell, or Command Prompt. In Git Bash's own window, deployer
-can't detect the terminal, so it prints plain output and doesn't ask questions.
+saved in `%APPDATA%\deployer\tokens\`, readable only by you.
+
+Windows Terminal, the default on Windows 11, shows deployer's colors and symbols
+best. The older console window of Windows 10 works, but may show some symbols as
+boxes. In Git Bash's own window, deployer can't detect the terminal, so it
+prints plain output and doesn't ask questions.
 
 The `laptop` token has the *deployer* role: it can register projects and manage
 previews, but not create tokens. Tokens expire after 90 days by default. See

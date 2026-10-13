@@ -20,7 +20,7 @@ func TestConfigDir(t *testing.T) {
 		{"windows", map[string]string{"APPDATA": "/appdata", "DEPLOYER_CONFIG_DIR": "/custom"}, "/custom"},
 	} {
 		got := configDir(func(k string) string { return c.env[k] }, c.goos, home)
-		if got != filepath.FromSlash(c.want) {
+		if filepath.ToSlash(got) != c.want {
 			t.Errorf("%s %v: %s, want %s", c.goos, c.env, got, c.want)
 		}
 	}

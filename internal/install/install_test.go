@@ -14,11 +14,22 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 )
+
+// The installer sets up a Linux server. The CLI, which includes it, also runs
+// on Windows, where the installer only refuses to run.
+func TestMain(m *testing.M) {
+	if runtime.GOOS == "windows" {
+		fmt.Println("skipping: the server installs on Linux")
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
 
 type fakeSystem struct {
 	mu       sync.Mutex

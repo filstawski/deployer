@@ -44,7 +44,13 @@ func Open(path string) (*Store, error) {
 	q.Add("_pragma", "journal_mode(WAL)")
 	q.Add("_pragma", "synchronous(NORMAL)")
 	q.Set("_txlock", "immediate")
-	db, err := sql.Open("sqlite", (&url.URL{Scheme: "file", Path: path, RawQuery: q.Encode()}).String())
+	// SQLite takes a URI. A Windows path, used by tests of the CLI, becomes
+	// file:///C:/...
+	uriPath := filepath.ToSlash(path)
+	if filepath.VolumeName(path) != "" {
+		uriPath = "/" + uriPath
+	}
+	db, err := sql.Open("sqlite", (&url.URL{Scheme: "file", Path: uriPath, RawQuery: q.Encode()}).String())
 	if err != nil {
 		return nil, err
 	}
