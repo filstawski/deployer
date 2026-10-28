@@ -31,21 +31,9 @@ Roles:
 		Args: exactArgs(1, "NAME"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			req := domain.CreateTokenRequest{Name: args[0], Scopes: domain.Roles[role]}
-			if scopes != "" {
-				var err error
-				if req.Scopes, err = domain.ParseScopes(scopes); err != nil {
-					return usage("--scopes: %v", err)
-				}
-			} else if req.Scopes == nil {
-				return usage("unknown role %q (choose %s)", role, strings.Join(domain.RoleNames(), ", "))
-			}
-			if ttl != "never" {
-				d, err := domain.ParseDuration(ttl)
-				if err != nil {
-					return usage("--ttl: %v", err)
-				}
-				req.TTLSeconds = int64(d.Seconds())
+			req, err := tokenRequest(args[0], role, scopes, ttl)
+			if err != nil {
+				return err
 			}
 			c, err := a.client(ctx)
 			if err != nil {
@@ -166,6 +154,27 @@ func projectIDs(ctx context.Context, c *client.Client, refs []string) ([]string,
 		ids = append(ids, p.ID)
 	}
 	return ids, nil
+}
+
+// tokenRequest builds a token request from the --role, --scopes, and --ttl flags.
+func tokenRequest(name, role, scopes, ttl string) (domain.CreateTokenRequest, error) {
+	req := domain.CreateTokenRequest{Name: name, Scopes: domain.Roles[role]}
+	if scopes != "" {
+		var err error
+		if req.Scopes, err = domain.ParseScopes(scopes); err != nil {
+			return req, usage("--scopes: %v", err)
+		}
+	} else if req.Scopes == nil {
+		return req, usage("unknown role %q (choose %s)", role, strings.Join(domain.RoleNames(), ", "))
+	}
+	if ttl != "never" {
+		d, err := domain.ParseDuration(ttl)
+		if err != nil {
+			return req, usage("--ttl: %v", err)
+		}
+		req.TTLSeconds = int64(d.Seconds())
+	}
+	return req, nil
 }
 
 // loginURL suggests the URL to log in with a token created on this server.

@@ -9,19 +9,23 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/filstawski/deployer/internal/client"
 	"github.com/filstawski/deployer/internal/domain"
 	"github.com/filstawski/deployer/internal/fakes"
 	"github.com/filstawski/deployer/internal/release"
 	"github.com/filstawski/deployer/internal/secretfile"
 	"github.com/filstawski/deployer/internal/testenv"
+	"rsc.io/qr"
 )
 
 type result struct {
@@ -487,5 +491,66 @@ func TestUpdateOnOldServer(t *testing.T) {
 	h := &harness{t: t, vars: map[string]string{"DEPLOYER_URL": old.URL, "DEPLOYER_TOKEN": "dpl_" + strings.Repeat("a", 64)}, config: t.TempDir(), dir: t.TempDir()}
 	if r := h.run("", "update", "design-a"); r.code != ExitError || !strings.Contains(r.stderr, "too old to update previews") {
 		t.Fatalf("update on an old server: %d %s", r.code, r.stderr)
+	}
+}
+
+func TestPair(t *testing.T) {
+	h := newHarness(t)
+	h.login()
+	// The test server is plain HTTP and has no public address to offer.
+	if r := h.run("", "pair"); r.code == 0 || !strings.Contains(r.stderr, "deployer pair --server") {
+		t.Fatalf("pair without an HTTPS address: %d\n%s", r.code, r.stderr)
+	}
+
+	var p pairing
+	h.ok("pair", "tablet", "--role", "viewer", "--server", "https://api.example.com/", "--json").json(t, &p)
+	u, err := url.Parse(p.URL)
+	if err != nil || u.Scheme != "deployer" || u.Host != "pair" ||
+		u.Query().Get("server") != "https://api.example.com" || u.Query().Get("token") != p.Secret {
+		t.Fatalf("pairing link %q", p.URL)
+	}
+	if p.Token.Name != "tablet" || !slices.Equal(p.Token.Scopes, domain.Roles["viewer"]) {
+		t.Fatalf("token %+v", p.Token)
+	}
+	// The secret in the code works.
+	c, _ := client.New(h.server.Server.URL, p.Secret, client.Options{})
+	if s, err := c.Status(context.Background()); err != nil || s.Token.Name != "tablet" {
+		t.Fatalf("pairing token: %v", err)
+	}
+
+	r := h.ok("pair", "--server", "https://api.example.com")
+	if !strings.Contains(r.stdout, "█") || !strings.Contains(r.stdout, "Address  https://api.example.com") {
+		t.Fatalf("pair output:\n%s", r.stdout)
+	}
+}
+
+func TestQRLinesDrawEveryModule(t *testing.T) {
+	code, err := qr.Encode(pairURL("https://api.example.com", domain.NewTokenSecret()), qr.M)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, colored := range []bool{true, false} {
+		lines := qrLines(code, colored)
+		const quiet = 2
+		size := code.Size + 2*quiet
+		if len(lines) != (size+1)/2 {
+			t.Fatalf("%d lines for %d modules", len(lines), size)
+		}
+		// Read the modules back from the half blocks.
+		for y := 0; y < size; y++ {
+			row := []rune(lines[y/2])
+			if len(row) != size {
+				t.Fatalf("line %d is %d wide, want %d", y/2, len(row), size)
+			}
+			for x := 0; x < size; x++ {
+				ch := row[x]
+				filled := ch == '█' || (y%2 == 0 && ch == '▀') || (y%2 == 1 && ch == '▄')
+				mx, my := x-quiet, y-quiet
+				dark := mx >= 0 && my >= 0 && mx < code.Size && my < code.Size && code.Black(mx, my)
+				if filled != (dark == colored) {
+					t.Fatalf("colored=%v: module (%d,%d) drawn wrong", colored, mx, my)
+				}
+			}
+		}
 	}
 }

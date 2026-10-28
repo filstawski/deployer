@@ -255,6 +255,16 @@ takes effect immediately.
 | `viewer` | `server:read`, `projects:read`, `deployments:read` | Read everything it has access to, including logs. |
 | `admin` | `admin` | Everything, including tokens and GitHub setup. |
 
+To connect the [Android app](android.md), `deployer pair` creates a token for
+the phone and shows it as a QR code to scan. It takes the same `--role`,
+`--project`, and `--ttl` options:
+
+```sh
+deployer pair                         # a token named phone
+deployer pair tablet --role viewer
+deployer pair --server https://api.previews.example.com   # when connected over SSH
+```
+
 `--project` limits a token to specific projects; repeat it for several. Such a
 token cannot register new projects, so it fits CI jobs for one repository. You
 can also pass `--scopes` with an explicit comma-separated list instead of a role.
