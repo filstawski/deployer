@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose draws everything; this only colors the window before it does. -->
+    <style name="Theme.Deployer" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/window</item>
+    </style>
+</resources>

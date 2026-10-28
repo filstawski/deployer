@@ -46,6 +46,9 @@ predictable, scriptable way to put a branch online.
   workflow: `npx skills add filstawski/deployer`.
 - **Private repositories.** A GitHub App reads only the repositories you
   select, using short-lived, read-only tokens.
+- **On your phone.** The [Android app](docs/android.md) deploys branches and
+  manages previews, follows their logs, and notifies you when one is ready,
+  fails, or is about to expire. `deployer pair` connects it with a QR code.
 
 ## How it works
 
@@ -151,6 +154,7 @@ for Node.js, static sites, and monorepos.
 - [Installation](docs/installation.md): server setup, DNS and TLS, upgrades, and removal
 - [Preparing a project](docs/projects.md): `deployer.yaml`, Dockerfiles, and health checks
 - [CLI reference](docs/cli.md): every command, output formats, and exit codes
+- [Android app](docs/android.md): managing previews from a phone
 - [Private GitHub repositories](docs/github.md)
 - [Guide for AI agents](docs/agents.md): the agent skill, JSON output, and error codes
 - [HTTP API](docs/api.md)

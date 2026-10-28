@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Three stacked layers: the app's mark, drawn inside the adaptive icon's safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="1.9"
+        android:scaleY="1.9"
+        android:translateX="31.2"
+        android:translateY="30">
+        <path
+            android:pathData="M12,3l9,5 -9,5 -9,-5z"
+            android:strokeWidth="1.9"
+            android:strokeColor="@color/launcher_foreground"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M3,13l9,5 9,-5"
+            android:strokeWidth="1.9"
+            android:strokeColor="@color/launcher_foreground"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M3,17.5l9,5 9,-5"
+            android:strokeAlpha="0.5"
+            android:strokeWidth="1.9"
+            android:strokeColor="@color/launcher_foreground"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
+</vector>

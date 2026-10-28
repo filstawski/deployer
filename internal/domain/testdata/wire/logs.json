@@ -1,0 +1,7 @@
+{
+  "data": {
+    "logs": "#1 load Dockerfile\n#2 RUN npm ci\n",
+    "offset": 34
+  },
+  "request_id": "req_z9x8c7v6bnml"
+}

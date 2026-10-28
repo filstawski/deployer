@@ -9,6 +9,7 @@ documentation is in [README.md](README.md) and [docs/](docs/).
 make check    # gofmt, go vet, race-enabled tests; must pass before a change is done
 make e2e      # real Docker end-to-end test; run after touching docker/, controller/, gateway/, daemon/
 make build    # bin/deployer, bin/deployerd
+cd android && ./gradlew testDebugUnitTest lintDebug   # the Android app; run after touching android/ or internal/domain
 ```
 
 ## Map
@@ -25,13 +26,16 @@ make build    # bin/deployer, bin/deployerd
 | Database schema | `internal/store/migrations.go`: append a migration, never edit a released one |
 | Server installation | `internal/install`, `install.sh` |
 | CLI installation | `install.sh`, `install.ps1` (Windows), `internal/release` |
+| The Android app | `android/`, [docs/android.md](docs/android.md) |
 
 [docs/architecture.md](docs/architecture.md) explains how the pieces fit together.
 
 ## Rules
 
 - `internal/domain` is the wire contract. Don't rename JSON fields, error codes,
-  or exit codes; add new ones.
+  or exit codes; add new ones. The Android app decodes the fixtures in
+  `internal/domain/testdata/wire`; after changing the JSON, run
+  `go test ./internal/domain -run TestWireFixtures -update` and update `android/`.
 - User-facing errors are `*domain.Error` with a code, a plain message, and, when
   there is an obvious next step, a hint with the exact command.
 - Lifecycle rules belong in `internal/controller`. The store persists, and

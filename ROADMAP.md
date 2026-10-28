@@ -19,6 +19,8 @@ The [design notes](docs/design.md) describe how planned features should behave.
   registration
 - Updating a preview in place from newer commits, keeping its name, URL, and
   lifetime, with the previous version kept if the new one fails
+- An Android app to deploy, manage, and follow previews, with notifications, a
+  home screen widget, and pairing by QR code (`deployer pair`)
 
 ## Next
 
@@ -47,6 +49,8 @@ These complete the core experience for teams, in order of priority.
 - Notifications to Slack or Discord when a preview is ready or fails, with its URL.
 - A web page listing running previews, for people who don't use the CLI.
 - A live, full-screen terminal dashboard when `deployer` runs without arguments.
+- Push notifications for the Android app, so alerts about work started
+  elsewhere don't wait for the phone's next background check.
 
 ## Later
 

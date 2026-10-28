@@ -54,6 +54,33 @@ so this checkout deploys itself. The server fetches from GitHub, so the branch
 must be pushed. Stop the server with Ctrl-C. Remove its containers and state with
 `./bin/deployerd cleanup --config examples/dev-server.yaml && rm -rf .deployer`.
 
+## Android app
+
+The app in [android/](../android) is Kotlin with Jetpack Compose. It needs JDK 17
+and the Android SDK: set `ANDROID_HOME`, or `sdk.dir` in `android/local.properties`.
+
+```sh
+cd android
+./gradlew testDebugUnitTest lintDebug   # tests and lint, as CI runs them
+./gradlew installDebug                  # build and install on a connected phone or emulator
+```
+
+The tests run the API client against a local HTTP server and decode the JSON
+fixtures in `internal/domain/testdata/wire`. `TestWireFixtures` in
+`internal/domain` keeps those files equal to what the API sends, so renaming a
+field fails the Go tests first. After an intended change to the JSON, regenerate
+them and update the app's models in `android/app/src/main/kotlin/.../api/Models.kt`:
+
+```sh
+go test ./internal/domain -run TestWireFixtures -update
+```
+
+Debug builds also accept plain `http://` to the development machine (`localhost`,
+`127.0.0.1`, and the emulator's `10.0.2.2`), so the emulator can reach `make dev`
+at `http://10.0.2.2:7420`. Everything else, and every release build, requires
+HTTPS. A debug build installs over a release build made on the same computer, as
+both use its debug key.
+
 ## Conventions
 
 - **The API contract lives in `internal/domain`.** JSON field names, error codes,
@@ -88,6 +115,22 @@ The [release workflow](../.github/workflows/release.yml) runs `make check`, then
 `install.sh` and an `install.ps1` that default to that version, plus `VERSION`
 and `SHA256SUMS`, and the workflow publishes everything as a GitHub release. Tags with a suffix, such as
 `v0.2.0-rc.1`, become prereleases. GitHub's `latest` URL skips those.
+
+The workflow also builds the Android app, signs it, and attaches it to the
+release as `deployer-android_v0.2.0.apk`. That step needs the signing key in the
+repository's secrets; without them, it skips the APK and leaves a notice. Every
+release must use the same key, because Android installs an update only if it is
+signed like the installed app. Create the key once, and keep a copy somewhere
+safe:
+
+```sh
+keytool -genkeypair -keystore deployer-release.jks -alias deployer \
+  -keyalg RSA -keysize 4096 -validity 10000 -dname "CN=Deployer"
+base64 < deployer-release.jks | gh secret set DEPLOYER_ANDROID_KEYSTORE_BASE64
+gh secret set DEPLOYER_ANDROID_KEYSTORE_PASSWORD   # prompts for each value
+gh secret set DEPLOYER_ANDROID_KEY_ALIAS           # deployer
+gh secret set DEPLOYER_ANDROID_KEY_PASSWORD
+```
 
 To build release files locally without publishing: `make release VERSION=v0.2.0`.
 Test them with the installer's `--from` option:

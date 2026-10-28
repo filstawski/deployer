@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "INVALID_STATE",
+    "message": "feat-checkout is already stopped",
+    "hint": "start it with: deployer start feat-checkout"
+  },
+  "request_id": "req_a1s2d3f4g5hj"
+}

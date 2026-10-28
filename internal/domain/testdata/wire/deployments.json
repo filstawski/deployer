@@ -1,0 +1,63 @@
+{
+  "data": [
+    {
+      "id": "dep_k7m2q9x4abcd",
+      "name": "feat-checkout",
+      "project_id": "prj_9s6vn7ax49yx",
+      "project": "storefront",
+      "ref": "feat/checkout",
+      "commit": "9f3c2e1b7d63b83b6f7e029c4be79244204d87c9",
+      "state": "running",
+      "hostname": "feat-checkout.previews.example.com",
+      "url": "https://feat-checkout.previews.example.com",
+      "ttl_seconds": 86400,
+      "created_by": "tok_3f9a2c7d1e5b",
+      "created_at": "2026-10-28T13:00:00Z",
+      "updated_at": "2026-10-28T13:02:00Z",
+      "ready_at": "2026-10-28T13:02:00Z",
+      "expires_at": "2026-10-29T13:02:00Z",
+      "purge_at": "2026-11-05T13:02:00Z",
+      "operation_id": "op_8cf3q2m9xkwz",
+      "image": "sha256:3a3d6ed1",
+      "port": 3000,
+      "health_path": "/healthz"
+    },
+    {
+      "id": "dep_b2x8n4v6qwer",
+      "name": "fix-cart-total",
+      "project_id": "prj_9s6vn7ax49yx",
+      "project": "storefront",
+      "ref": "fix/cart-total",
+      "state": "building",
+      "hostname": "fix-cart-total.previews.example.com",
+      "url": "https://fix-cart-total.previews.example.com",
+      "ttl_seconds": 86400,
+      "created_by": "tok_3f9a2c7d1e5b",
+      "created_at": "2026-10-28T14:25:00Z",
+      "updated_at": "2026-10-28T14:25:00Z",
+      "operation_id": "op_2hd7s9k3mnbv"
+    },
+    {
+      "id": "dep_f5c1z7l0poiu",
+      "name": "docs-v2",
+      "project_id": "prj_4t8wq1ez62rd",
+      "project": "docs-site",
+      "ref": "v2",
+      "commit": "c03f5a2e8d1b4f6a9c7e0b3d5f2a8c1e4b7d9f0a",
+      "state": "failed",
+      "error": {
+        "code": "HEALTHCHECK_FAILED",
+        "message": "GET /healthz did not succeed within 1m0s",
+        "hint": "check the app's logs: deployer logs docs-v2"
+      },
+      "hostname": "docs-v2.previews.example.com",
+      "url": "https://docs-v2.previews.example.com",
+      "ttl_seconds": 86400,
+      "created_by": "tok_3f9a2c7d1e5b",
+      "created_at": "2026-10-28T12:00:00Z",
+      "updated_at": "2026-10-28T12:03:00Z",
+      "operation_id": "op_7yt5r3e1wqas"
+    }
+  ],
+  "request_id": "req_m3n8b2v5cxza"
+}

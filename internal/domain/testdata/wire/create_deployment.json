@@ -1,0 +1,32 @@
+{
+  "data": {
+    "deployment": {
+      "id": "dep_b2x8n4v6qwer",
+      "name": "fix-cart-total",
+      "project_id": "prj_9s6vn7ax49yx",
+      "project": "storefront",
+      "ref": "fix/cart-total",
+      "state": "building",
+      "hostname": "fix-cart-total.previews.example.com",
+      "url": "https://fix-cart-total.previews.example.com",
+      "ttl_seconds": 86400,
+      "created_by": "tok_3f9a2c7d1e5b",
+      "created_at": "2026-10-28T14:25:00Z",
+      "updated_at": "2026-10-28T14:25:00Z",
+      "operation_id": "op_2hd7s9k3mnbv"
+    },
+    "operation": {
+      "id": "op_2hd7s9k3mnbv",
+      "kind": "deployment.create",
+      "status": "queued",
+      "project_id": "prj_9s6vn7ax49yx",
+      "deployment_id": "dep_b2x8n4v6qwer",
+      "actor": "tok_3f9a2c7d1e5b",
+      "attempts": 0,
+      "created_at": "2026-10-28T14:25:00Z",
+      "updated_at": "2026-10-28T14:25:00Z",
+      "deadline": "2026-10-28T16:25:00Z"
+    }
+  },
+  "request_id": "req_c9v8b7n6m5lk"
+}

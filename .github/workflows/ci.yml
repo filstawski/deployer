@@ -53,3 +53,23 @@ jobs:
       - name: Install and upgrade the CLI
         shell: pwsh
         run: ./scripts/test-windows-install.ps1 -Site site
+
+  # The Android app. Its tests decode the API's JSON from
+  # internal/domain/testdata/wire, so a renamed field fails here too.
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v6
+      - run: ./gradlew --no-daemon testDebugUnitTest lintDebug assembleRelease
+      - uses: actions/upload-artifact@v7
+        with:
+          name: deployer-android
+          path: android/app/build/outputs/apk/release/app-release.apk

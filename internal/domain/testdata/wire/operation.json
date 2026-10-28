@@ -1,0 +1,25 @@
+{
+  "data": {
+    "id": "op_9kq3w7e2rtyu",
+    "kind": "deployment.update",
+    "status": "succeeded",
+    "project_id": "prj_9s6vn7ax49yx",
+    "deployment_id": "dep_k7m2q9x4abcd",
+    "actor": "tok_3f9a2c7d1e5b",
+    "attempts": 1,
+    "request": {
+      "ref": ""
+    },
+    "result": {
+      "previous_commit": "7d63b83b6f7e029c4be79244204d87c9ef71a460",
+      "commit": "9f3c2e1b7d63b83b6f7e029c4be79244204d87c9",
+      "changed": true
+    },
+    "created_at": "2026-10-28T14:00:00Z",
+    "updated_at": "2026-10-28T14:02:00Z",
+    "started_at": "2026-10-28T14:00:00Z",
+    "finished_at": "2026-10-28T14:02:00Z",
+    "deadline": "2026-10-28T16:00:00Z"
+  },
+  "request_id": "req_q1w2e3r4t5yu"
+}

@@ -1,3 +1,5 @@
 # Check out text files with LF line endings on every platform, Windows too,
 # so gofmt, tests, and embedded files see the same bytes everywhere.
 * text=auto eol=lf
+# Windows batch files need CRLF line endings to run reliably.
+*.bat text eol=crlf
