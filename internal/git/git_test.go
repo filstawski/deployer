@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -37,6 +38,40 @@ func repository(t *testing.T) (url, mainCommit, designCommit string) {
 	run(t, dir, "commit", "--quiet", "-am", "design")
 	designCommit = run(t, dir, "rev-parse", "HEAD")
 	return "file://" + dir, mainCommit, designCommit
+}
+
+func TestBranches(t *testing.T) {
+	url, mainCommit, designCommit := repository(t)
+	c := &Client{HomeDir: t.TempDir(), AllowLocal: true}
+	branches, err := c.Branches(context.Background(), url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The fixture repository is left on design/a, which makes it the default.
+	want := []domain.Branch{{Name: "design/a", Commit: designCommit, Default: true}, {Name: "main", Commit: mainCommit}}
+	if !reflect.DeepEqual(branches, want) {
+		t.Fatalf("Branches = %+v, want %+v", branches, want)
+	}
+	if _, err := c.Branches(context.Background(), "file:///nonexistent/repo"); domain.CodeOf(err) != domain.CodeSourceFailed {
+		t.Fatalf("missing repository: %v", err)
+	}
+}
+
+func TestParseBranches(t *testing.T) {
+	a, b := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	out := "ref: refs/heads/main\tHEAD\n" + a + "\tHEAD\n" + b + "\trefs/heads/zeta\n" + a + "\trefs/heads/main\n" + b + "\trefs/heads/alpha\n"
+	got := parseBranches(out)
+	want := []domain.Branch{{Name: "main", Commit: a, Default: true}, {Name: "alpha", Commit: b}, {Name: "zeta", Commit: b}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("parseBranches = %+v", got)
+	}
+	// Output cut off at the size limit loses the unfinished line, not its name's end.
+	if got := parseBranches(a + "\trefs/heads/main\n" + b + "\trefs/heads/feature/lo"); len(got) != 1 || got[0].Name != "main" {
+		t.Fatalf("truncated output: %+v", got)
+	}
+	if got := parseBranches(""); got == nil || len(got) != 0 {
+		t.Fatalf("an empty repository should list no branches, not null: %#v", got)
+	}
 }
 
 func TestFetch(t *testing.T) {

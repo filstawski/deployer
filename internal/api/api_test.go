@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/filstawski/deployer/internal/domain"
+	"github.com/filstawski/deployer/internal/fakes"
 	"github.com/filstawski/deployer/internal/testenv"
 )
 
@@ -127,6 +129,26 @@ func TestScopesAndProjectIsolation(t *testing.T) {
 		if r := call(t, env, other, "GET", path, nil); r.status != 404 {
 			t.Errorf("%s visible to another project's token: %d", path, r.status)
 		}
+	}
+}
+
+func TestProjectBranches(t *testing.T) {
+	env := testenv.New(t)
+	var shop, blog domain.Project
+	call(t, env, env.AdminToken, "POST", "/v1/projects", domain.CreateProjectRequest{Name: "shop", Repository: "https://github.com/acme/shop"}).decode(t, &shop)
+	call(t, env, env.AdminToken, "POST", "/v1/projects", domain.CreateProjectRequest{Name: "blog", Repository: "https://github.com/acme/blog"}).decode(t, &blog)
+	pushed := env.Source.Push("design/a")
+
+	viewer := env.Token(t, "viewer", domain.Roles["viewer"], shop.ID)
+	var branches []domain.Branch
+	r := call(t, env, viewer, "GET", "/v1/projects/shop/branches", nil)
+	r.decode(t, &branches)
+	want := []domain.Branch{{Name: "main", Commit: fakes.Commit("main"), Default: true}, {Name: "design/a", Commit: pushed}}
+	if r.status != 200 || !reflect.DeepEqual(branches, want) {
+		t.Fatalf("branches: %d %+v", r.status, branches)
+	}
+	if r := call(t, env, viewer, "GET", "/v1/projects/blog/branches", nil); r.status != 404 {
+		t.Fatalf("another project's branches visible: %d", r.status)
 	}
 }
 

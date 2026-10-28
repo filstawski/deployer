@@ -205,6 +205,12 @@ func (c *Client) DeleteProject(ctx context.Context, ref string) (domain.Project,
 	return out, c.do(ctx, "DELETE", "/v1/projects/"+esc(ref), "", nil, &out)
 }
 
+// Branches lists a project's branches, default branch first.
+func (c *Client) Branches(ctx context.Context, project string) ([]domain.Branch, error) {
+	var out []domain.Branch
+	return out, c.do(ctx, "GET", "/v1/projects/"+esc(project)+"/branches", "", nil, &out)
+}
+
 // VerifyProject queues a repository access check.
 func (c *Client) VerifyProject(ctx context.Context, ref, key string) (domain.Operation, error) {
 	var out domain.Operation

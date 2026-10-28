@@ -37,6 +37,7 @@ func (s *Server) routes() {
 	s.handle("GET /v1/projects/{project}", domain.ScopeProjectsRead, s.getProject)
 	s.handle("DELETE /v1/projects/{project}", domain.ScopeProjectsWrite, s.deleteProject)
 	s.handle("POST /v1/projects/{project}/verify", domain.ScopeProjectsWrite, s.verifyProject)
+	s.handle("GET /v1/projects/{project}/branches", domain.ScopeProjectsRead, s.projectBranches)
 
 	s.handle("GET /v1/deployments", domain.ScopeDeploymentsRead, s.listDeployments)
 	s.handle("POST /v1/deployments", domain.ScopeDeploymentsWrite, s.createDeployment)
@@ -126,6 +127,15 @@ func (s *Server) deleteProject(r *request) (int, any, error) {
 		return 0, nil, err
 	}
 	return http.StatusOK, p, s.Store.DeleteProject(r.Context(), p.ID, r.token.ID)
+}
+
+func (s *Server) projectBranches(r *request) (int, any, error) {
+	p, err := s.project(r, r.PathValue("project"))
+	if err != nil {
+		return 0, nil, err
+	}
+	branches, err := s.Controller.Branches(r.Context(), p)
+	return http.StatusOK, branches, err
 }
 
 func (s *Server) verifyProject(r *request) (int, any, error) {

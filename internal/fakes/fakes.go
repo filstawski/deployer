@@ -295,6 +295,26 @@ func (s *Source) Fetch(_ context.Context, _, ref, pinned, dest string) (string, 
 // Verify implements controller.Source.
 func (s *Source) Verify(context.Context, string) (string, error) { return Commit("main"), nil }
 
+// Branches implements controller.Source: main, which is the default, and
+// every branch that was pushed.
+func (s *Source) Branches(context.Context, string) ([]domain.Branch, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	head := func(name string) string {
+		if c := s.commits[name]; c != "" {
+			return c
+		}
+		return Commit(name)
+	}
+	branches := []domain.Branch{{Name: "main", Commit: head("main"), Default: true}}
+	for _, name := range slices.Sorted(maps.Keys(s.commits)) {
+		if name != "main" {
+			branches = append(branches, domain.Branch{Name: name, Commit: head(name)})
+		}
+	}
+	return branches, nil
+}
+
 // Commit returns the fake commit SHA for a ref.
 func Commit(ref string) string {
 	sum := sha1.Sum([]byte(ref))

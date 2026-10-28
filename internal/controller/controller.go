@@ -38,6 +38,7 @@ type Router interface {
 type Source interface {
 	Fetch(ctx context.Context, repository, ref, pinned, dest string) (string, error)
 	Verify(ctx context.Context, repository string) (string, error)
+	Branches(ctx context.Context, repository string) ([]domain.Branch, error)
 }
 
 // Queue is the part of the dispatcher the controller drives.

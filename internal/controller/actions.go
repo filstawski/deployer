@@ -342,6 +342,11 @@ func (c *Controller) Extend(ctx context.Context, actor, id string, by time.Durat
 	return c.Present(d), nil
 }
 
+// Branches lists a project's branches, reading them from the repository now.
+func (c *Controller) Branches(ctx context.Context, project domain.Project) ([]domain.Branch, error) {
+	return c.source.Branches(ctx, project.Repository)
+}
+
 // VerifyProject queues a check that the server can read a project's
 // repository.
 func (c *Controller) VerifyProject(ctx context.Context, actor string, project domain.Project, key string) (domain.Operation, error) {

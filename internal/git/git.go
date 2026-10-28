@@ -9,6 +9,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -105,6 +106,63 @@ func (c *Client) Verify(ctx context.Context, repository string) (string, error) 
 		return "", domain.Errorf(domain.CodeSourceFailed, "repository has no default branch commit")
 	}
 	return fields[0], nil
+}
+
+// Branches lists the repository's branches: the default branch first, then
+// the others by name.
+func (c *Client) Branches(ctx context.Context, repository string) ([]domain.Branch, error) {
+	if err := os.MkdirAll(c.HomeDir, 0o700); err != nil {
+		return nil, err
+	}
+	env, err := c.env(ctx, repository)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	args := append(c.baseArgs(), "ls-remote", "--symref", "--", repository, "HEAD", "refs/heads/*")
+	out, err := execx.Run(ctx, execx.Cmd{Name: "git", Args: args, Dir: c.HomeDir, Env: env})
+	if err != nil {
+		return nil, classify(ctx, out, "HEAD")
+	}
+	return parseBranches(out), nil
+}
+
+// parseBranches reads `git ls-remote --symref` output: "ref: refs/heads/main
+// HEAD" names the default branch, and "<sha> refs/heads/<name>" each branch.
+func parseBranches(out string) []domain.Branch {
+	var head string
+	branches := []domain.Branch{}
+	lines := strings.Split(out, "\n")
+	// Output is capped (execx.MaxOutput); a last line without its newline may
+	// be cut off mid-name.
+	lines = lines[:len(lines)-1]
+	for _, line := range lines {
+		left, right, ok := strings.Cut(strings.TrimSpace(line), "\t")
+		if !ok {
+			continue
+		}
+		if target, ok := strings.CutPrefix(left, "ref: refs/heads/"); ok && right == "HEAD" {
+			head = target
+			continue
+		}
+		if name, ok := strings.CutPrefix(right, "refs/heads/"); ok && domain.IsCommitSHA(left) {
+			branches = append(branches, domain.Branch{Name: name, Commit: left})
+		}
+	}
+	for i := range branches {
+		branches[i].Default = branches[i].Name == head
+	}
+	slices.SortStableFunc(branches, func(a, b domain.Branch) int {
+		if a.Default != b.Default {
+			if a.Default {
+				return -1
+			}
+			return 1
+		}
+		return strings.Compare(a.Name, b.Name)
+	})
+	return branches
 }
 
 func (c *Client) baseArgs() []string {

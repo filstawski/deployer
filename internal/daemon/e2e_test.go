@@ -59,6 +59,10 @@ func (fixtureSource) Verify(context.Context, string) (string, error) {
 	return strings.Repeat("a", 40), nil
 }
 
+func (fixtureSource) Branches(context.Context, string) ([]domain.Branch, error) {
+	return []domain.Branch{{Name: "main", Commit: strings.Repeat("a", 40), Default: true}}, nil
+}
+
 func freePort(t *testing.T) int {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")

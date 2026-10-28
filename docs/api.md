@@ -62,6 +62,7 @@ Path parameters accept a name or an ID: `{project}` is `shop` or `prj_...`, and
 | `GET /v1/projects/{project}` | `projects:read` | Get a project |
 | `DELETE /v1/projects/{project}` | `projects:write` | Remove a project without live deployments |
 | `POST /v1/projects/{project}/verify` | `projects:write` | Check repository access (operation) |
+| `GET /v1/projects/{project}/branches` | `projects:read` | List the repository's branches |
 | `GET /v1/deployments` | `deployments:read` | List deployments: `?project=shop`, `?all=true` includes destroyed |
 | `POST /v1/deployments` | `deployments:write` | Create a deployment (operation) |
 | `GET /v1/deployments/{deployment}` | `deployments:read` | Get a deployment |
@@ -113,6 +114,18 @@ Tokens see only the projects, deployments, and operations they are granted.
 `expired`, `failed`, or `destroyed`. A failed deployment has an `error` object.
 `expires_at` is unset until the deployment first becomes ready. `purge_at` is
 when it will be destroyed automatically.
+
+### Branch
+
+```json
+{ "name": "main", "commit": "7d63b83b6f7e029c4be79244204d87c9ef71a460", "default": true }
+```
+
+`GET /v1/projects/{project}/branches` reads the repository when it is called,
+which takes a moment. It fails with `SOURCE_FAILED` or `TIMEOUT` when the server
+can't read the repository, and with `GITHUB_FAILED` when GitHub doesn't grant
+access to a private one. The default branch comes first, with
+`"default": true`, and the others follow by name.
 
 ### Operation
 
