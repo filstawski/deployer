@@ -1,5 +1,6 @@
 package io.github.filstawski.deployer.ui.deployments
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -42,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -54,6 +56,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import io.github.filstawski.deployer.api.Deployment
 import io.github.filstawski.deployer.api.ServerStatus
 import io.github.filstawski.deployer.api.State
+import io.github.filstawski.deployer.model.BulkAction
 import io.github.filstawski.deployer.model.StateFilter
 import io.github.filstawski.deployer.model.TimeFormat
 import io.github.filstawski.deployer.model.Tone
@@ -68,6 +71,7 @@ import io.github.filstawski.deployer.ui.components.LeaseBar
 import io.github.filstawski.deployer.ui.components.Panel
 import io.github.filstawski.deployer.ui.components.StateSymbol
 import io.github.filstawski.deployer.ui.components.rememberNow
+import io.github.filstawski.deployer.ui.extend.BulkExtendSheet
 import io.github.filstawski.deployer.ui.extend.ExtendSheet
 import io.github.filstawski.deployer.ui.theme.DeployerIcons
 import io.github.filstawski.deployer.ui.theme.DeployerTheme
@@ -97,6 +101,8 @@ fun DeploymentsScreen(
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var extending by remember { mutableStateOf<Deployment?>(null) }
+    var confirming by remember { mutableStateOf<BulkAction?>(null) }
+    var extendingMany by remember { mutableStateOf(false) }
 
     val lifecycle = LocalLifecycleOwner.current
     LaunchedEffect(viewModel, lifecycle) {
@@ -108,12 +114,29 @@ fun DeploymentsScreen(
         snackbar.showSnackbar(message)
         onMessageShown()
     }
+    LaunchedEffect(state.message) {
+        val text = state.message ?: return@LaunchedEffect
+        snackbar.showSnackbar(text)
+        viewModel.messageShown()
+    }
+    BackHandler(enabled = state.selecting) { viewModel.clearSelection() }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         containerColor = colors.background,
+        bottomBar = {
+            if (state.selecting) {
+                BulkActions(state, onClose = viewModel::clearSelection, onSelectAll = viewModel::selectAll, onAction = { action ->
+                    when (action) {
+                        BulkAction.Start -> viewModel.runBulk(action)
+                        BulkAction.Extend -> extendingMany = true
+                        else -> confirming = action
+                    }
+                })
+            }
+        },
         floatingActionButton = {
-            if (state.status?.token?.canWrite == true) {
+            if (state.canWrite && !state.selecting) {
                 ExtendedFloatingActionButton(
                     onClick = onDeploy,
                     icon = { Icon(DeployerIcons.Plus, contentDescription = null) },
@@ -124,60 +147,92 @@ fun DeploymentsScreen(
             }
         },
     ) { padding ->
-        PullToRefreshBox(
-            isRefreshing = state.refreshing,
-            onRefresh = viewModel::refresh,
-            modifier = Modifier
+        Box(
+            Modifier
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            LazyColumn(
-                Modifier.fillMaxSize(),
-                // Room at the end for the Deploy button.
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 96.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+            PullToRefreshBox(
+                isRefreshing = state.refreshing,
+                onRefresh = viewModel::refresh,
+                modifier = Modifier.fillMaxSize(),
             ) {
-                item(key = "header") {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        ServerChip(serverName, healthy = state.loaded && state.error == null, onClick = { onServers(state.status) })
-                        Text("Deployments", style = DeployerType.title, color = colors.text)
-                    }
-                }
-                state.error?.let { error ->
-                    item(key = "error") { ErrorPanel(error, title = "Can't refresh", onAction = viewModel::refresh) }
-                }
-                if (askForNotifications) {
-                    item(key = "notifications") { NotificationsOffer(onAllowNotifications, onDeclineNotifications) }
-                }
-                state.status?.let { status ->
-                    item(key = "capacity") { Capacity(status, state.deployments) }
-                }
-                if (state.deployments.isNotEmpty()) {
-                    item(key = "filters") { Filters(state, viewModel::setFilter) }
-                }
-                items(state.visible, key = { it.id }) { deployment ->
-                    DeploymentCard(
-                        deployment,
-                        now,
-                        canExtend = state.status?.token?.canWrite == true,
-                        onClick = { onOpen(deployment) },
-                        onExtend = { extending = deployment },
-                    )
-                }
-                if (!state.loaded) {
-                    item(key = "loading") {
-                        Box(Modifier.fillMaxWidth().padding(top = 48.dp), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(color = colors.accent)
+                LazyColumn(
+                    Modifier.fillMaxSize(),
+                    // Room at the end for the Deploy button.
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 96.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    item(key = "header") {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            ServerChip(serverName, healthy = state.loaded && state.error == null, onClick = { onServers(state.status) })
+                            Text("Deployments", style = DeployerType.title, color = colors.text)
                         }
                     }
-                } else if (state.deployments.isEmpty() && state.error == null) {
-                    item(key = "empty") { Empty() }
+                    state.bulk?.let { run ->
+                        item(key = "bulk") { BulkProgress(run, onDismiss = viewModel::dismissBulk) }
+                    }
+                    state.error?.let { error ->
+                        item(key = "error") { ErrorPanel(error, title = "Can't refresh", onAction = viewModel::refresh) }
+                    }
+                    if (askForNotifications) {
+                        item(key = "notifications") { NotificationsOffer(onAllowNotifications, onDeclineNotifications) }
+                    }
+                    state.status?.let { status ->
+                        item(key = "capacity") { Capacity(status, state.deployments) }
+                    }
+                    if (state.deployments.isNotEmpty()) {
+                        item(key = "filters") { Filters(state, viewModel::setFilter) }
+                    }
+                    items(state.visible, key = { it.id }) { deployment ->
+                        DeploymentCard(
+                            deployment,
+                            now,
+                            canExtend = state.canWrite && !state.selecting,
+                            selecting = state.selecting,
+                            selected = deployment.id in state.selected,
+                            onClick = { if (state.selecting) viewModel.toggle(deployment) else onOpen(deployment) },
+                            // Only a token that may change deployments can act on several.
+                            onLongClick = if (state.canWrite) ({ viewModel.toggle(deployment) }) else null,
+                            onExtend = { extending = deployment },
+                        )
+                    }
+                    if (!state.loaded) {
+                        item(key = "loading") {
+                            Box(Modifier.fillMaxWidth().padding(top = 48.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(color = colors.accent)
+                            }
+                        }
+                    } else if (state.deployments.isEmpty() && state.error == null) {
+                        item(key = "empty") { Empty() }
+                    }
                 }
             }
         }
     }
 
     val status = state.status
+    confirming?.let { action ->
+        val targets = state.targets(action)
+        // A refresh can take the selection away while asking; then there is nothing to ask about.
+        if (targets.isEmpty()) confirming = null
+        BulkConfirm(action, targets, onDismiss = { confirming = null }) {
+            confirming = null
+            viewModel.runBulk(action)
+        }
+    }
+    if (extendingMany && state.targets(BulkAction.Extend).isEmpty()) extendingMany = false
+    if (extendingMany && status != null) {
+        BulkExtendSheet(
+            deployments = state.targets(BulkAction.Extend),
+            maxTtl = status.deployments.maxTtlSeconds.seconds,
+            onExtend = { by ->
+                extendingMany = false
+                viewModel.runBulk(BulkAction.Extend, by)
+            },
+            onDismiss = { extendingMany = false },
+        )
+    }
     extending?.let { deployment ->
         if (status != null) {
             ExtendSheet(
@@ -321,14 +376,28 @@ private fun DeploymentCard(
     deployment: Deployment,
     now: Instant,
     canExtend: Boolean,
+    selecting: Boolean,
+    selected: Boolean,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)?,
     onExtend: () -> Unit,
 ) {
     val colors = DeployerTheme.colors
     val soon = deployment.expiresSoon(now)
-    Panel(onClick = onClick, border = if (soon) colors.busy.copy(alpha = 0.35f) else colors.line) {
+    Panel(
+        modifier = Modifier.semantics { if (selecting) this.selected = selected },
+        onClick = onClick,
+        onLongClick = onLongClick,
+        onLongClickLabel = if (selected) "Deselect" else "Select",
+        border = when {
+            selected -> colors.accent
+            soon -> colors.busy.copy(alpha = 0.35f)
+            else -> colors.line
+        },
+        color = if (selected) colors.accentSoft else colors.surface,
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            StateSymbol(deployment.state, Modifier.width(16.dp))
+            if (selecting) SelectionMark(selected) else StateSymbol(deployment.state, Modifier.width(16.dp))
             Text(
                 deployment.name,
                 style = DeployerType.name,

@@ -2,7 +2,8 @@
 
 The Android app manages a server's deployments from your phone. You can:
 
-- deploy a branch, and update, stop, start, extend, or destroy a deployment;
+- deploy branches, and update, stop, start, extend, or destroy deployments, one
+  or several at a time;
 - open a deployment's URL and follow its logs;
 - get notified when a deployment is ready, fails, or is about to expire;
 - see your deployments at a glance on the home screen.
@@ -80,6 +81,27 @@ deployer token revoke tok_3f9a2c7d1e5b
 
 A token with the `viewer` role sees everything, without the buttons that change
 things.
+
+## Several at once
+
+**Deployments.** Hold a deployment to start selecting, then tap others to add
+them; **Select all** takes every one the filter shows. The bar at the bottom
+offers Start, Stop, Update, Extend, and Destroy, each with how many of the
+selected it applies to: Stop counts the running ones, Start the stopped and
+failed ones that were built before. Stop, Update, and Destroy ask first; Update
+also starts stopped ones. Extend gives each deployment your choice,
+or as much of it as the server still allows that one; **Max** gives each its
+own maximum. A banner shows the progress, and afterwards what failed and why;
+**Hide** stops following a long run in the app, while notifications still say
+how it ends. Back ends selecting.
+
+**Branches.** On the deploy screen, hold a branch to choose several, then tap
+others to add or remove them. Each gets the name `deployer deploy` would
+suggest, unique among them. A branch that already has a preview updates it;
+**New instead** creates another. The lifetime applies to all new previews. If
+they won't all fit under the server's limit on live deployments, the app says
+so before you start. When some fail, the others start anyway, and the failed
+ones stay chosen with the reason, to try again.
 
 ## Notifications
 

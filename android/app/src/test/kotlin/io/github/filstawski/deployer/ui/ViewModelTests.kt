@@ -3,13 +3,16 @@ package io.github.filstawski.deployer.ui
 import io.github.filstawski.deployer.api.TestServer
 import io.github.filstawski.deployer.api.fixture
 import io.github.filstawski.deployer.api.json
+import io.github.filstawski.deployer.model.BulkAction
 import io.github.filstawski.deployer.ui.deploy.NewDeploymentViewModel
+import io.github.filstawski.deployer.ui.deployments.DeploymentsViewModel
 import io.github.filstawski.deployer.ui.deployment.DeploymentViewModel
 import io.github.filstawski.deployer.ui.logs.LogsViewModel
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.Duration.Companion.days
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -20,7 +23,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.withTimeout
+import androidx.lifecycle.viewModelScope
 import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
 import mockwebserver3.RecordedRequest
@@ -383,6 +388,289 @@ class ViewModelTests {
         vm.setName("api")
         assertEquals("api is reserved.", vm.state.value.nameError)
         assertFalse(vm.state.value.canSubmit)
+    }
+
+    /** The deployments fixture with fix-cart-total running too, ending [fixExpires]. */
+    private fun twoRunning(fixExpires: String = "2026-10-29T14:25:00Z") = fixture("deployments.json").replace(
+        "\"state\": \"building\",",
+        "\"state\": \"running\", \"image\": \"sha256:b\", \"ready_at\": \"2026-10-28T14:25:00Z\", \"expires_at\": \"$fixExpires\",",
+    )
+
+    private fun DeploymentsViewModel.selectAllLoaded() = runBlocking {
+        state.await { it.deployments.isNotEmpty() }
+        selectAll()
+    }
+
+    @Test fun aBulkActionActsOnTheSelectedItAppliesTo() {
+        val posts = java.util.Collections.synchronizedList(mutableListOf<String>())
+        val followed = java.util.concurrent.atomic.AtomicReference<List<String>>()
+        route { r ->
+            val path = r.url.encodedPath
+            when {
+                r.method == "POST" && path.endsWith("/stop") -> {
+                    val id = path.split("/")[3]
+                    posts += id
+                    operation("deployment.stop", "queued", id = "op_$id")
+                }
+                path.startsWith("/v1/operations/") -> operation("deployment.stop", "succeeded", id = path.substringAfterLast("/"))
+                else -> json(twoRunning())
+            }
+        }
+        val vm = DeploymentsViewModel(t.api, onSubmitted = { followed.set(it) }, pollMillis = 10, clock = { fixtureTime })
+        visibleList(vm) {
+            vm.selectAllLoaded()
+            assertEquals(3, vm.state.value.selected.size)
+            assertEquals("docs-v2 failed and isn't running", 2, vm.state.value.targets(BulkAction.Stop).size)
+            vm.runBulk(BulkAction.Stop)
+            assertTrue("selection ends when the action starts", vm.state.value.selected.isEmpty())
+            assertEquals("Stopped 2 deployments", vm.state.await { it.message != null }.message)
+            assertNull(vm.state.value.bulk)
+            assertEquals(setOf("dep_k7m2q9x4abcd", "dep_b2x8n4v6qwer"), posts.toSet())
+            assertEquals(setOf("op_dep_k7m2q9x4abcd", "op_dep_b2x8n4v6qwer"), followed.get().toSet())
+        }
+    }
+
+    @Test fun aBulkActionReportsWhatFailedAndWhy() {
+        route { r ->
+            val path = r.url.encodedPath
+            when {
+                r.method == "POST" && path.contains("dep_b2x8n4v6qwer") -> json(fixture("error.json"), code = 409)
+                r.method == "POST" -> operation("deployment.stop", "queued")
+                path.startsWith("/v1/operations/") -> operation("deployment.stop", "succeeded")
+                else -> json(twoRunning())
+            }
+        }
+        val vm = DeploymentsViewModel(t.api, pollMillis = 10, clock = { fixtureTime })
+        visibleList(vm) {
+            vm.selectAllLoaded()
+            vm.runBulk(BulkAction.Stop)
+            val run = vm.state.await { it.bulk?.finished == true }.bulk!!
+            assertEquals(listOf("fix-cart-total"), run.failures.map { it.first })
+            assertEquals("INVALID_STATE", run.failures.single().second.code)
+            assertNull("no all-clear when something failed", vm.state.value.message)
+            vm.dismissBulk()
+            assertNull(vm.state.value.bulk)
+        }
+    }
+
+    @Test fun aBulkExtensionGivesEachAsMuchAsItMay() {
+        val bodies = java.util.concurrent.ConcurrentHashMap<String, String>()
+        route { r ->
+            val path = r.url.encodedPath
+            when {
+                r.method == "POST" && path.endsWith("/extend") -> {
+                    bodies[path.split("/")[3]] = r.body?.utf8().orEmpty()
+                    json(fixture("deployment.json"))
+                }
+                // fix-cart-total may run only 2 more hours under the 7-day limit.
+                else -> json(twoRunning(fixExpires = "2026-11-04T13:00:00Z"))
+            }
+        }
+        val vm = DeploymentsViewModel(t.api, pollMillis = 10, clock = { fixtureTime })
+        visibleList(vm) {
+            vm.selectAllLoaded()
+            vm.runBulk(BulkAction.Extend, 1.days)
+            assertEquals("Extended 3 deployments", vm.state.await { it.message != null }.message)
+            assertEquals("""{"seconds":86400}""", bodies["dep_k7m2q9x4abcd"])
+            assertEquals("""{"seconds":7140}""", bodies["dep_b2x8n4v6qwer"])
+            // docs-v2 has no lease yet; its lifetime can still grow to the limit.
+            assertEquals("""{"seconds":86400}""", bodies["dep_f5c1z7l0poiu"])
+        }
+    }
+
+    @Test fun aBulkActionReportsOperationsThatFailedOrEndedUnknown() {
+        route { r ->
+            val path = r.url.encodedPath
+            when {
+                r.method == "POST" -> operation("deployment.stop", "queued", id = "op_" + path.split("/")[3])
+                path == "/v1/operations/op_dep_k7m2q9x4abcd" -> operation(
+                    "deployment.stop", "failed", ""","error":{"code":"INTERRUPTED","message":"the server restarted"}""", id = "op_dep_k7m2q9x4abcd",
+                )
+                path.startsWith("/v1/operations/") -> operation("deployment.stop", "archived", id = path.substringAfterLast("/"))
+                else -> json(twoRunning())
+            }
+        }
+        val vm = DeploymentsViewModel(t.api, pollMillis = 10, clock = { fixtureTime })
+        visibleList(vm) {
+            vm.selectAllLoaded()
+            vm.runBulk(BulkAction.Stop)
+            val run = vm.state.await { it.bulk?.finished == true }.bulk!!
+            assertEquals(
+                mapOf("feat-checkout" to "INTERRUPTED", "fix-cart-total" to "UNKNOWN"),
+                run.failures.associate { it.first to it.second.code },
+            )
+        }
+    }
+
+    @Test fun anOperationThatCantBeLookedUpIsGivenUpOn() {
+        route { r ->
+            val path = r.url.encodedPath
+            when {
+                r.method == "POST" -> operation("deployment.stop", "queued", id = "op_" + path.split("/")[3])
+                // One operation went with its project; the other can't be read.
+                path == "/v1/operations/op_dep_k7m2q9x4abcd" -> json("""{"error":{"code":"NOT_FOUND","message":"gone"}}""", code = 404)
+                path.startsWith("/v1/operations/") -> json("""{"error":{"code":"FORBIDDEN","message":"token revoked"}}""", code = 403)
+                else -> json(twoRunning())
+            }
+        }
+        val vm = DeploymentsViewModel(t.api, pollMillis = 10, clock = { fixtureTime })
+        visibleList(vm) {
+            vm.selectAllLoaded()
+            vm.runBulk(BulkAction.Stop)
+            val run = vm.state.await { it.bulk?.finished == true }.bulk!!
+            assertEquals(listOf("fix-cart-total"), run.failures.map { it.first })
+            assertTrue(run.failures.single().second.message.startsWith("Lost track of it"))
+        }
+    }
+
+    @Test fun hidingARunStopsFollowingIt() {
+        val polls = AtomicInteger()
+        route { r ->
+            when {
+                r.method == "POST" -> operation("deployment.update", "queued")
+                r.url.encodedPath.startsWith("/v1/operations/") -> operation("deployment.update", "running").also { polls.incrementAndGet() }
+                else -> json(twoRunning())
+            }
+        }
+        val vm = DeploymentsViewModel(t.api, pollMillis = 10, clock = { fixtureTime })
+        visibleList(vm) {
+            vm.selectAllLoaded()
+            vm.runBulk(BulkAction.Update)
+            withTimeout(5_000) { while (polls.get() < 3) delay(10) }
+            vm.dismissBulk()
+            assertNull(vm.state.value.bulk)
+            val after = polls.get()
+            delay(200)
+            assertTrue("following stopped", polls.get() <= after + 2)
+            // The bar is free again.
+            vm.selectAll()
+            assertEquals(3, vm.state.value.targets(BulkAction.Destroy).size)
+        }
+    }
+
+    @Test fun deploymentsThatDisappearLeaveTheSelection() {
+        val gone = AtomicBoolean(false)
+        route { _ ->
+            val list = twoRunning()
+            json(if (gone.get()) list.replace("\"id\": \"dep_f5c1z7l0poiu\"", "\"id\": \"dep_other\"") else list)
+        }
+        val vm = DeploymentsViewModel(t.api, pollMillis = 10, clock = { fixtureTime })
+        visibleList(vm) {
+            vm.selectAllLoaded()
+            assertTrue("dep_f5c1z7l0poiu" in vm.state.value.selected)
+            gone.set(true)
+            vm.refresh()
+            vm.state.await { "dep_f5c1z7l0poiu" !in it.selected }
+            assertEquals(2, vm.state.value.selected.size)
+        }
+    }
+
+    /** Runs [block] while the list is on screen, which is when bulk operations are followed. */
+    private fun visibleList(vm: DeploymentsViewModel, block: suspend CoroutineScope.() -> Unit) = runBlocking {
+        val polling = launch(Dispatchers.Default) { vm.poll() }
+        try {
+            block()
+        } finally {
+            polling.cancel()
+        }
+    }
+
+    @Test fun severalBranchesAreDeployedAtOnce() = runBlocking {
+        val deployed = java.util.Collections.synchronizedList(mutableListOf<String>())
+        val created = AtomicInteger()
+        val updated = AtomicBoolean(false)
+        val followed = java.util.concurrent.atomic.AtomicReference<List<String>>()
+        route { r ->
+            when {
+                r.url.encodedPath == "/v1/projects" -> json(fixture("projects.json"))
+                r.url.encodedPath.endsWith("/branches") -> json(fixture("branches.json"))
+                r.method == "POST" && r.url.encodedPath == "/v1/deployments" -> {
+                    deployed += r.body!!.utf8()
+                    // Each deployment gets its own operation; the requests run in parallel.
+                    json(fixture("create_deployment.json").replace("op_2hd7s9k3mnbv", "op_new_${created.incrementAndGet()}"), code = 202)
+                }
+                r.method == "POST" && r.url.encodedPath.endsWith("/update") -> operation("deployment.update", "queued", id = "op_update").also { updated.set(true) }
+                else -> json(fixture("deployments.json"))
+            }
+        }
+        val vm = NewDeploymentViewModel(t.api, clock = { fixtureTime }, onSubmitted = { followed.set(it) })
+        vm.state.await { it.branch == "main" }
+        vm.pick("main")
+        vm.setQuery("feature/x")
+        vm.selectBranch("feature/x")
+        vm.selectBranch("feat/checkout")
+        val chosen = vm.state.value
+        assertEquals(listOf("main", "feature/x", "feat/checkout"), chosen.selected)
+        assertEquals(
+            listOf("storefront-main" to null, "storefront-feature-x" to null, "feat-checkout" to "feat-checkout"),
+            chosen.plans.map { it.name to it.update?.name },
+        )
+        vm.submit()
+        assertEquals("Deploying 2 branches and updating 1 preview", vm.state.await { it.finished != null }.finished)
+        assertEquals(2, deployed.size)
+        assertTrue(deployed.any { "\"ref\":\"feature/x\"" in it && "\"name\":\"storefront-feature-x\"" in it })
+        assertTrue(deployed.any { "\"ref\":\"main\"" in it && "\"name\":\"storefront-main\"" in it })
+        assertTrue(updated.get())
+        assertEquals(setOf("op_new_1", "op_new_2", "op_update"), followed.get().toSet())
+    }
+
+    @Test fun leavingWhileDeployingStillFollowsWhatStarted() = runBlocking {
+        val followed = java.util.concurrent.atomic.AtomicReference<List<String>>()
+        route { r ->
+            when {
+                r.url.encodedPath == "/v1/projects" -> json(fixture("projects.json"))
+                r.url.encodedPath.endsWith("/branches") -> json(fixture("branches.json"))
+                r.method == "POST" -> json(fixture("create_deployment.json"), code = 202).newBuilder().headersDelay(300, TimeUnit.MILLISECONDS).build()
+                else -> json(fixture("deployments.json"))
+            }
+        }
+        val vm = NewDeploymentViewModel(t.api, clock = { fixtureTime }, onSubmitted = { followed.set(it) })
+        vm.state.await { it.branch == "main" }
+        vm.pick("main")
+        vm.selectBranch("feature/x")
+        vm.submit()
+        // The screen closes while the requests are on their way.
+        vm.viewModelScope.cancel()
+        withTimeout(5_000) { while (followed.get() == null) delay(20) }
+        assertEquals(2, followed.get().size)
+    }
+
+    @Test fun aBranchListArrivingLateKeepsWhatWasChosen() = runBlocking {
+        route { r ->
+            when {
+                r.url.encodedPath == "/v1/projects" -> json(fixture("projects.json"))
+                r.url.encodedPath.endsWith("/branches") -> json(fixture("branches.json")).newBuilder().headersDelay(400, TimeUnit.MILLISECONDS).build()
+                else -> json(fixture("deployments.json"))
+            }
+        }
+        val vm = NewDeploymentViewModel(t.api, clock = { fixtureTime })
+        vm.state.await { it.project != null && it.loadingBranches }
+        vm.pick("feature/x")
+        val loaded = vm.state.await { !it.loadingBranches }
+        assertEquals("the default branch isn't added on top", listOf("feature/x"), loaded.selected)
+    }
+
+    @Test fun branchesThatFailStayChosenToTryAgain() = runBlocking {
+        route { r ->
+            when {
+                r.url.encodedPath == "/v1/projects" -> json(fixture("projects.json"))
+                r.url.encodedPath.endsWith("/branches") -> json(fixture("branches.json"))
+                r.method == "POST" && r.body?.utf8()?.contains("feature/x") == true ->
+                    json("""{"error":{"code":"QUOTA_EXCEEDED","message":"10 deployments are live, the most this server allows"}}""", code = 429)
+                r.method == "POST" -> json(fixture("create_deployment.json"), code = 202)
+                else -> json(fixture("deployments.json"))
+            }
+        }
+        val vm = NewDeploymentViewModel(t.api, clock = { fixtureTime })
+        vm.state.await { it.branch == "main" }
+        vm.pick("main")
+        vm.selectBranch("feature/x")
+        vm.submit()
+        val after = vm.state.await { it.failures.isNotEmpty() }
+        assertEquals(listOf("feature/x"), after.selected)
+        assertEquals("QUOTA_EXCEEDED", after.failures.single().second.code)
+        assertNull(after.finished)
+        assertNull(after.opened)
     }
 
     @Test fun aNewBuildIsReadAfreshInsteadOfSplicedOntoTheOldOne() = runBlocking {

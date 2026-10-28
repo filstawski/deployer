@@ -55,7 +55,7 @@ class DeploymentViewModel(
     private val ref: String,
     private val pollMillis: Long = 1_000,
     /** Called with the operation once the server accepted an action, to follow it after the app is left. */
-    private val onSubmitted: (operationId: String) -> Unit = {},
+    private val onSubmitted: (operationIds: List<String>) -> Unit = {},
 ) : ViewModel() {
     private val _state = MutableStateFlow(DeploymentState())
     val state: StateFlow<DeploymentState> = _state.asStateFlow()
@@ -124,7 +124,7 @@ class DeploymentViewModel(
                 return@launch
             }
             wake.trySend(Unit)
-            onSubmitted(submitted.id)
+            onSubmitted(listOf(submitted.id))
             val finished = follow(submitted)
             val name = _state.value.deployment?.name ?: ref
             _state.update {

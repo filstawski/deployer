@@ -2,6 +2,7 @@ package io.github.filstawski.deployer.ui.components
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +25,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -50,23 +53,46 @@ fun rememberNow(periodMillis: Long = 15_000): State<Instant> = produceState(Inst
     }
 }
 
-/** A rounded panel on the page's ground. */
+/**
+ * A rounded panel on the page's ground. With [onLongClick], holding it does
+ * something too, described for accessibility by [onLongClickLabel].
+ */
 @Composable
 fun Panel(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null,
+    onLongClickLabel: String? = null,
     border: Color? = null,
+    color: Color = DeployerTheme.colors.surface,
     radius: Dp = 16.dp,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val colors = DeployerTheme.colors
     val shape = RoundedCornerShape(radius)
     val stroke = border?.let { BorderStroke(1.dp, it) }
     val inner: @Composable () -> Unit = { Column(Modifier.padding(16.dp), content = content) }
-    if (onClick != null) {
-        Surface(onClick = onClick, modifier = modifier, shape = shape, color = colors.surface, border = stroke, content = inner)
+    val haptics = LocalHapticFeedback.current
+    if (onLongClick != null) {
+        Surface(
+            modifier = modifier
+                .clip(shape)
+                .combinedClickable(
+                    onClick = onClick ?: {},
+                    onLongClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onLongClick()
+                    },
+                    onLongClickLabel = onLongClickLabel,
+                ),
+            shape = shape,
+            color = color,
+            border = stroke,
+            content = inner,
+        )
+    } else if (onClick != null) {
+        Surface(onClick = onClick, modifier = modifier, shape = shape, color = color, border = stroke, content = inner)
     } else {
-        Surface(modifier = modifier, shape = shape, color = colors.surface, border = stroke, content = inner)
+        Surface(modifier = modifier, shape = shape, color = color, border = stroke, content = inner)
     }
 }
 

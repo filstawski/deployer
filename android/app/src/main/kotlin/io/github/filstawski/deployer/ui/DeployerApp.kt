@@ -131,7 +131,11 @@ fun DeployerApp(container: AppContainer) {
         composable<DeploymentsRoute> { entry ->
             val connection = active ?: return@composable
             val vm = viewModel(key = "deployments:${connection.id}") {
-                DeploymentsViewModel(container.api(connection)) { status, list -> container.showOnWidget(connection.name, status, list) }
+                DeploymentsViewModel(
+                    container.api(connection),
+                    onLoaded = { status, list -> container.showOnWidget(connection.name, status, list) },
+                    onSubmitted = { operations -> container.followUp(connection.id, operations) },
+                )
             }
             val message by entry.savedStateHandle.getStateFlow<String?>(MESSAGE, null).collectAsStateWithLifecycle()
             DeploymentsScreen(
@@ -162,13 +166,17 @@ fun DeployerApp(container: AppContainer) {
                 onOpened = { name ->
                     nav.navigate(DeploymentRoute(name)) { popUpTo<NewDeploymentRoute> { inclusive = true } }
                 },
+                onFinished = { message ->
+                    nav.previousBackStackEntry?.savedStateHandle?.set(MESSAGE, message)
+                    nav.popBackStack()
+                },
             )
         }
         composable<DeploymentRoute> { entry ->
             val connection = active ?: return@composable
             val route = entry.toRoute<DeploymentRoute>()
             val vm = viewModel(key = "deployment:${connection.id}:${route.name}") {
-                DeploymentViewModel(container.api(connection), route.name) { operation -> container.followUp(connection.id, operation) }
+                DeploymentViewModel(container.api(connection), route.name) { operations -> container.followUp(connection.id, operations) }
             }
             DeploymentScreen(
                 vm,

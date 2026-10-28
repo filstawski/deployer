@@ -69,8 +69,8 @@ class AppContainer(private val context: Context, val inForeground: () -> Boolean
 
     fun api(connection: Connection) = api(connection.url, connection.token)
 
-    /** After an action from the phone: check often until its operation is done, to notify how it ended. */
-    fun followUp(serverId: String, operationId: String) = Checks.follow(context, serverId, operationId)
+    /** After actions from the phone: check often until their operations are done, to notify how they ended. */
+    fun followUp(serverId: String, operationIds: List<String>) = Checks.follow(context, serverId, operationIds)
 
     /** Starts background checks once a server is saved, and stops them when none is left. */
     fun serversChanged() {
